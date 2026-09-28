@@ -69,13 +69,35 @@ Microsoft Store にある既存のウィジェットで満足できるものが�
 
 ## 使い方
 
-必要環境: Windows 11 / .NET 10 SDK (Windows Desktop ワークロード込み)
+必要環境: Windows 11 / .NET 10 SDK
+
+### .NET 10 SDK のインストール
+
+PowerShell で次を実行します (winget は Windows 11 に標準で入っています)。
+
+```powershell
+winget install Microsoft.DotNet.SDK.10
+```
+
+winget を使わない場合は、[.NET 10 のダウンロードページ](https://dotnet.microsoft.com/download/dotnet/10.0) から
+Windows 用の SDK (x64) のインストーラーを入手して実行します。  
+Windows 版の SDK には WPF のビルドに必要なものが含まれているため、追加のワークロードは不要です。
+
+インストール後に PowerShell を開き直し、次のコマンドで `10.0.xxx` が表示されれば準備完了です。
+
+```powershell
+dotnet --list-sdks
+```
+
+### ビルドと起動
+
+リポジトリのフォルダで次を実行してビルドします。
 
 ```powershell
 dotnet build .\src\OkidokeiWidget.App\OkidokeiWidget.App.csproj -c Release
 ```
 
-でビルドし、生成された `src/OkidokeiWidget.App/bin/Release/net10.0-windows/OkidokeiWidget.App.exe`
+生成された `src/OkidokeiWidget.App/bin/Release/net10.0-windows/OkidokeiWidget.App.exe`
 を起動します。  
 ウィジェットを右クリック →「詳細設定」から、見た目やモニタごとの表示、
 自動起動の ON/OFF を設定できます。
