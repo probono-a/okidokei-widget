@@ -1,6 +1,6 @@
 # Implementation Plan: 常駐デスクトップ時計ウィジェット
 
-**Branch**: `001-clock-widget` | **Date**: 2026-09-17 (2026-09-24 更新: アンカー指定・右クリックメニュー統一、issue #26。2026-09-26 更新: ドラッグ範囲の制限、issue #39。同日更新: 自由配置のときの余白、issue #43) | **Spec**: [spec.md](./spec.md)
+**Branch**: `001-clock-widget` | **Date**: 2026-09-17 (2026-09-24 更新: アンカー指定・右クリックメニュー統一、issue #26。2026-09-26 更新: ドラッグ範囲の制限、issue #39。同日更新: 自由配置のときの余白、issue #43。2026-09-28 更新: モニタの見分け方、issue #52。同日更新: 日付の区切り文字、issue #60。2026-10-01 更新: モニタごとの設定、issue #53・#17) | **Spec**: [spec.md](./spec.md)
 
 **Input**: Feature specification from `/specs/001-clock-widget/spec.md`
 
@@ -49,13 +49,40 @@ contracts/context-menus.md を参照。
 
 設計の詳細は research.md #19 を参照。
 
+2026-09-28 の更新では、FR-026 の改訂 (issue #60) に合わせて、日付の区切り文字を広げる。
+
+- 詳細設定画面の選択肢に「.」を足す。設定ファイルでは任意の文字列を使えるようにする
+- 日付の文字列は、書式文字列に区切り文字を埋め込まず、数字と区切り文字をつなぎ合わせて作る
+  (`y`・`M`・`d` などを区切り文字にしても、書式の記号として解釈されないようにするため)
+- 設定の区切り文字が選択肢にないときは、詳細設定画面の欄を空欄にし、選び直さない限り書き換えない
+- 設定ファイルの形式は変えない (小さな変更として 1 ブランチ・1PR で進める)
+
+設計の詳細は research.md #21 を参照。
+
+2026-10-01 の更新では、FR-041・FR-042 の新設と FR-038 などの改訂 (issue #53・#17) に合わせて、
+見た目・位置ロック・最前面表示をモニタごとに持つ。
+
+- 設定ファイルでは、見た目とウィンドウ挙動を `Monitors` の各エントリの中に入れる。ルートには書き出さない
+- 以前のバージョンの設定ファイル (ルートに見た目がある) は、起動時の `Reconcile` で各モニタへ複製して引き継ぐ
+  - そのとき、つながっていないモニタは非表示にする
+- 新しいモニタは非表示で始める。モニタの設定が 1 つもないときだけ、プライマリモニタに表示する
+- 詳細設定画面
+  - 上に「編集するモニター」のドロップダウンを置き、選んだモニタの値を各タブに入れ直す
+  - 開いたままモニタを抜き差ししたら、選択肢を作り直す (#17)
+- タスクトレイの右クリックメニューは「詳細設定...」「自動起動」「終了」だけにする
+- 設定ファイルの形が変わるので、小さな変更ではない。plan・tasks・implement を別々の PR で進める
+
+設計の詳細は research.md #22〜#24、data-model.md の `MonitorPlacement`、contracts/settings-file.md・
+contracts/context-menus.md を参照。画面とメニューの形は ui-per-monitor-settings.md にある。
+
 ## Technical Context
 
 **Language/Version**: C# (最新言語バージョン) / .NET 10 (LTS)、`net10.0-windows` ターゲット
 
 **Primary Dependencies**: WPF (Microsoft.WindowsDesktop.App)、`System.Text.Json` (BCL)、
 `System.Windows.Forms.Screen`(モニタ列挙)、Win32 `EnumDisplayDevices`(P/Invoke、モニタの
-安定した識別子取得用)。`OkidokeiWidget.Core` / `OkidokeiWidget.App` の本体コードには外部 NuGet
+安定した識別子取得用。2026-09-28 訂正: 取れる ID は端子ごとの値を含み、端子を変えると変わる。
+research.md #20)。`OkidokeiWidget.Core` / `OkidokeiWidget.App` の本体コードには外部 NuGet
 パッケージを導入しない(テストプロジェクトの xUnit 関連パッケージは対象外。research.md #10 参照)
 
 **Storage**: ローカル JSON ファイル 1 つ (`%APPDATA%\OkidokeiWidget\settings.json`)。DB は使用しない
@@ -76,7 +103,7 @@ UI/視覚的な確認は `quickstart.md` の手動シナリオで行い、UI 自
 JSON のみで保存しレジストリを使用しない (Core Principle III)。設定ファイルが存在しない/
 不正でもクラッシュせずデフォルト設定で起動する (FR-018)
 
-**Scale/Scope**: 個人利用(1 PC・1 ユーザー)、4 ユーザーストーリー・39 の機能要件
+**Scale/Scope**: 個人利用(1 PC・1 ユーザー)、4 ユーザーストーリー・40 の機能要件
 (2026-09-24 の追加分 FR-034〜FR-038 はすべて User Story 3「配置とロック」に属する。
 2026-09-26 の FR-009 の改訂と SC-008 の新設、FR-035 の改訂と FR-039 の新設も User Story 3 に属する)
 
@@ -93,6 +120,9 @@ JSON のみで保存しレジストリを使用しない (Core Principle III)。
 | V. マルチモニタ・DPI 対応 | PASS | EDID 由来の安定したモニタ識別子で配置を保持し、再接続構成の変化にも対応 (research.md #2)。Per-Monitor V2 DPI 宣言でモニタ間 DPI 差異に対応 (research.md #5) |
 
 **結果**: 違反なし。Complexity Tracking への記載は不要
+
+補足 (2026-09-28、issue #52): 原則 V の根拠の「EDID 由来の安定したモニタ識別子」は誤りだった。
+ID は端子ごとの値を含み、端子を変えると変わる。見分け方は research.md #20 で決め直した
 
 ### 再チェック (2026-09-24、アンカー指定・右クリックメニュー統一の設計後)
 
@@ -135,6 +165,47 @@ JSON のみで保存しレジストリを使用しない (Core Principle III)。
 
 **結果**: 違反なし。Complexity Tracking への記載は不要
 
+### 再チェック (2026-09-28、モニタの見分け方の設計後、issue #52)
+
+| 原則 | 判定 | 根拠 |
+|---|---|---|
+| I. シンプルさ優先 (YAGNI) | PASS | 設定ファイルの形を変えず、移行の処理も書かない。探し方に「キーが一致しないモニタに、使われていない同じ型番の設定を端子の番号順に割り当てる」を 1 段足すだけで、spec の場合分けをすべて満たす (research.md #20)。画面の並びを保存して見分ける案は採らない。EDID のシリアル番号の読み取りは作らない |
+| II. 軽量な常駐動作 | PASS | 探し方の判定は、起動時・モニタ構成が変わったとき・DPI が変わったときの `Reconcile` の中だけで行う。常駐中の処理は増えない |
+| III. 設定は JSON・非破壊 | PASS | 設定ファイルの形は変えない。以前のバージョンの設定もそのまま読める。付け替えは設定を移すだけで、消したり初期値で上書きしたりしない |
+| IV. 誤操作防止 | PASS | 操作や画面は変えない。ケーブルをつなぎ直しただけで位置が初期値に戻る、という意図しない変化がなくなる |
+| V. マルチモニタ・DPI 対応 | PASS | research.md #2 の誤った前提 (ID が物理モニタに紐づく) を正し、端子のつなぎ直しでも設定を引き継ぐ (research.md #20)。同じ型番のモニタが複数ある場合も、端子が変われば使われていない設定を割り当て、初期値には戻さない。どれが前の設定かは保証しない (spec.md の SC-005・Edge Cases) |
+| Development Workflow 7 (UI フレームワークの挙動の事前確認) | 逸脱あり (Complexity Tracking) | 前提にしている Win32 の挙動 4 つを research.md #20 に列挙した。ID の形は開発機の設定ファイルで確かめた。「端子を変えると ID の端子ごとの部分が変わる」ことは、当初レジストリの記録からの推測だけで PASS としていたが、`/speckit-analyze` の指摘 K1 を受け、実装の前に実機でケーブルをつなぎ替えて確かめた (DELL の ID の端子ごとの部分が `UID4353` から `UID4355` に変わった。research.md #20)。同じ型番のモニタ・EDID を読めないモニタについての 2 つは、手元に該当するモニタがなく確かめられないため、Complexity Tracking に理由を書いた |
+
+**結果**: Development Workflow 7 の未確認の前提 2 つを、理由を付けて Complexity Tracking に記載した。それ以外の違反はない
+
+### 再チェック (2026-09-28、日付の区切り文字の設計後、issue #60)
+
+| 原則 | 判定 | 根拠 |
+|---|---|---|
+| I. シンプルさ優先 (YAGNI) | PASS | 画面には選択肢を 1 つ足すだけで、任意の文字を入力する欄は作らない。長さの上限や書記素単位の数え方も作らない (spec.md の Clarifications)。新しい設定・依存パッケージは追加しない |
+| II. 軽量な常駐動作 | PASS | 日付の文字列の作り方を変えるだけで、更新の頻度は変わらない (1 秒周期のまま) |
+| III. 設定は JSON・非破壊 | PASS | 設定ファイルの形式は変えない。選択肢にない区切り文字は、画面で選び直さない限り書き換えない。以前のバージョンの設定ファイルもそのまま読める |
+| IV. 誤操作防止 | PASS | 詳細設定画面を開いただけ・ほかの項目を変えただけで、設定ファイルに書いた区切り文字が消えることはない |
+| V. マルチモニタ・DPI 対応 | PASS | 影響なし (区切り文字はアプリ全体で 1 つのまま。モニタごとに持つのは issue #53 で扱う) |
+| VI. 品質の線引き | PASS | 守る側: 手で書き換えた区切り文字 (`null`・空欄・絵文字を含む) を読み込んでも落ちず、保存し直しても値を失わない (T127 のテストで押さえる)。気にしない側: 制御文字や極端に長い文字列の見た目、アプリの起動や保存で書き出したときに `\uXXXX` の形になる見た目 (spec.md の Clarifications・Assumptions)。どちらも設定ファイルを直接書き換えたときにしか起きない (`/speckit-analyze` の指摘 D1) |
+| Development Workflow 7 (UI フレームワークの挙動の事前確認) | PASS | 前提にしている `ComboBox` と `TextBlock` の挙動 4 つを research.md #21 に列挙し、最小のアプリで確かめて方法と結果を記録した。選択肢にない値を `SelectedItem` に入れても空欄にならないことが分かり、`null` を入れる設計にした。前提 3 のうち「マウスで選んだ場合」だけが未確認として残り、T130 の実機での確認で確かめる (research.md #21。今までの 2 択でも同じハンドラがマウスで動いており、外れても設定は失わない。2 回目の `/speckit-analyze` の指摘 D1) |
+
+**結果**: 違反なし。未確認の前提 1 つは、実装後の T130 で確かめる (2026-09-28 に確認済み。tasks.md の Phase 25 の確認結果)
+
+### 再チェック (2026-10-01、モニタごとの設定の設計後、issue #53・#17)
+
+| 原則 | 判定 | 根拠 |
+|---|---|---|
+| I. シンプルさ優先 (YAGNI) | PASS | 見た目とウィンドウ挙動のクラスは中身を変えず、`MonitorPlacement` の中へ置き場所を移すだけにした。設定ファイルのバージョン番号、新しいモニタのひな形、全モニタへの一括適用は作らない。選択肢の「(非表示)」は、変更通知を付けずに選択肢を作り直して変える (research.md #22・#23) |
+| II. 軽量な常駐動作 | PASS | 引き継ぎと新しいモニタの判定は、今までどおり起動時とモニタ構成の変化時の `Reconcile` の中だけで行う。常駐中の処理は増えない。詳細設定画面の選択肢の作り直しも、画面を開いている間だけ |
+| III. 設定は JSON・非破壊 | PASS | 引き続き JSON に保存する。以前のバージョンの見た目・位置ロック・最前面表示・位置は、各モニタへ複製して引き継ぎ、失わない。変わるのは、つながっていないモニタの表示/非表示だけで、これは spec.md で人間が決めた (Clarifications)。非表示にしたモニタの位置・見た目も残るので、表示に戻せば元どおりになる |
+| IV. 誤操作防止 | PASS | 右クリックメニューで表示/非表示を切り替えられないことは変えない (FR-012)。非表示のモニタは、タスクトレイから詳細設定画面を開いて戻せる。位置ロックがモニタごとになっても、ロックしたモニタのウィジェットは動かない (SC-004) |
+| V. マルチモニタ・DPI 対応 | PASS | 見た目・位置ロック・最前面表示をモニタごとに持つことで、モニタごとに違う大きさ・拡大率に合わせられる。FR-040 の付け替えの後に引き継ぐので、別の端子につなぎ直したモニタも「つながっている」と扱う (research.md #22) |
+| VI. 品質の線引き | PASS | 守る側: 以前のバージョンの設定ファイルを読み、見た目・位置などを失わないこと、開いたままモニタを抜き差ししても詳細設定画面が落ちないこと (単体テストと quickstart.md で確かめる)。気にしない側: 起動中に別の端子につなぎ直して `Identifier` が変わったときに、詳細設定画面の選択がプライマリモニタに戻ること、開いている間にプライマリモニタが変わったときの扱い (research.md #23、spec.md の Assumptions) |
+| Development Workflow 7 (UI フレームワークの挙動の事前確認) | PASS | 前提にしている `ComboBox` と `CheckBox` の挙動 2 つを research.md #23 に列挙し、最小のアプリで確かめた。`ItemsSource` を替えても、値の等しい要素があると選択が残る、と分かったため、選択肢は参照で比べるクラスにし、作り直した後に必ず選び直す設計にした。開いたままモニタを抜き差しする操作は、実装後に quickstart.md で実機で確かめる |
+
+**結果**: 違反なし
+
 ## Project Structure
 
 ### Documentation (this feature)
@@ -159,7 +230,7 @@ src/
 │   ├── Settings/                # WidgetSettings, AppearanceSettings,
 │   │                             # WindowBehaviorSettings, MonitorPlacement
 │   ├── Persistence/              # 設定ファイルの読み書き・デフォルトへのフォールバック
-│   └── Monitors/                  # モニタ列挙・EDID 由来の識別子解決
+│   └── Monitors/                  # モニタ列挙・モニタ識別子の取得
 │
 └── OkidokeiWidget.App/           # WPF 実行ファイル
     ├── App.xaml(.cs)              # エントリポイント、多重起動防止、自動起動連携
@@ -273,6 +344,129 @@ tests/
 - アンカー指定中の余白の動き、ドラッグ、横位置・縦位置の選び方
 - 位置ロック中のグレーアウト (FR-010)
 
+## 既存実装に対する変更計画 (2026-09-28、issue #52)
+
+### OkidokeiWidget.Core
+
+| ファイル | 変更 | 内容 |
+|---|---|---|
+| `Monitors/MonitorIdentifier.cs` | 変更 | ID から型番 (`#` で区切った 2 つ目の部分) を取り出す関数を追加する。区切った結果が 3 つ未満の ID と、2 つ目が空の ID には null を返す (research.md #20)。`GetStableIdsByAdapterDeviceName` のコメントの「EDID 由来の安定した ID」を、型番と端子ごとの値からなる ID である、という実態に合わせて直す |
+| `Monitors/ConnectedMonitor.cs` | 変更 | `Identifier` のコメントを、上と同じく実態に合わせて直す |
+| `Persistence/MonitorSettingsReconciler.cs` | 変更 | キーが一致しなかったモニタに、同じ型番の「使われていない設定」(キーが接続中のどのモニタとも一致しないもの) を、キーの順に 1 対 1 で割り当てる段を足す。割り当てた `MonitorPlacement` は新しいキーへ移す (同じインスタンスを移し、古いキーは消す)。割り当てる設定がなかったモニタには、今までどおりデフォルト値を足す (research.md #20) |
+
+### OkidokeiWidget.App
+
+変更しない。起動時とモニタ構成の変化時 (`OnDisplaySettingsChanged`) は、どちらも `Reconcile` の後に
+`SettingsRepository.Save` しているので、付け替えた結果はそのまま保存される。
+
+- 実行中にケーブルをつなぎ直した場合、`SyncClockWindows` は古いキーのウィンドウを閉じ、新しいキーで
+  ウィンドウを作り直す
+- `ClockWindow` は設定を辞書のキーではなく `MonitorPlacement` のインスタンスで持っている
+  - `Reconcile` で同じインスタンスを移すので、閉じる側のウィンドウが古いキーの設定を作り直すことはない
+
+### テスト (OkidokeiWidget.Core.Tests)
+
+| ファイル | 変更 | 内容 |
+|---|---|---|
+| `Monitors/MonitorIdentifierTests.cs` | 追加 | 型番の取り出し (実際の ID の形、`#` で区切れない `\\.\DISPLAY1`) |
+| `Persistence/MonitorSettingsReconcilerTests.cs` | 変更 | 別の端子につなぎ直すと前の設定が付け替わり古いキーが消える、型番の違う 2 台の端子の入れ替え、同じ型番 2 台の端子ごとの設定、1 台から 2 台に増えたとき、2 台から 1 台に減り別の端子につながったとき、同じ型番の 2 台をどちらも別の端子へつなぎ直したとき、型番が取れない ID、の各場合 (research.md #20 の Rationale の場合分け) |
+
+### 変更しないもの
+
+- 設定ファイルの形式 (`contracts/settings-file.md`)。キーの形も今までと同じ
+- 詳細設定画面のモニタの一覧、右クリックメニュー
+  - 詳細設定画面を開いたままケーブルをつなぎ直すと、画面の一覧は古い ID のままなので、そのモニタの
+    チェックを切り替えても何も起きない (落ちはしない)。開き直せば直る。今までも、開いたままモニタを
+    つなぎ直すと一覧が古いままだった。通常の操作ではまず起きないため、対応しない (`/speckit-analyze` の指摘 A2)
+- モニタを取り外したときに設定を残す扱い (Edge Cases)
+
+## 既存実装に対する変更計画 (2026-09-28、issue #60)
+
+### OkidokeiWidget.Core
+
+| ファイル | 変更 | 内容 |
+|---|---|---|
+| `Settings/AppearanceSettings.cs` | 変更 | `DateSeparator` の型を `string?` にする。設定ファイルから `null` が入り、そのまま保存し直されるため (`/speckit-analyze` の指摘 I1)。既定値は今までどおり「/」 |
+| `Settings/DateSeparatorResolver.cs` | 変更 | `Resolve` の引数を `string?` にし、`null` のときだけ `DefaultSeparator` (「/」) を返す。それ以外はそのまま返す。許可リストと XML コメントの「`/` または `-` 以外はフォールバック」を、FR-026 の改訂に合わせて直す (research.md #21) |
+| `Settings/DateTextFormatter.cs` | 追加 | 日時と区切り文字から日付の文字列 (`年{区切り}月{区切り}日`。年は 4 桁、月・日は 2 桁) を作る。区切り文字は `DateSeparatorResolver.Resolve` を通してから、書式文字列に埋め込まずにつなぎ合わせる (research.md #21) |
+
+### OkidokeiWidget.App
+
+| ファイル | 変更 | 内容 |
+|---|---|---|
+| `ClockWindow.xaml.cs` | 変更 | `UpdateClockText` の日付の表示を `DateTextFormatter` で作る |
+| `SettingsWindow.xaml.cs` | 変更 | 区切り文字の選択肢に「.」を足す。設定の区切り文字 (`Resolve` を通した値) が選択肢にあればそれを、なければ `null` を `SelectedItem` に入れる (research.md #21 の前提 2)。`SelectionChanged` の処理は変えない |
+
+### テスト (OkidokeiWidget.Core.Tests)
+
+| ファイル | 変更 | 内容 |
+|---|---|---|
+| `Settings/DateSeparatorResolverTests.cs` | 変更 | 「/」「-」「.」、空欄、選択肢にない文字列 (`//`・`🍣` など) はそのまま返す。`null` は「/」を返す。今の「許可されていない値はデフォルトを返す」テストは、FR-026 の改訂で成り立たなくなるので置き換える |
+| `Settings/DateTextFormatterTests.cs` | 追加 | 「/」「.」で `2026/09/28`・`2026.09.28` になる。月・日が 1 桁の日付でも 2 桁で出る。空欄で `20260928`、`null` で `2026/09/28` になる。`🍣` のような絵文字、書式の記号になる `d`・`M`・`y`・`'`・`\`・`%`・`:` がそのまま出る |
+| `Persistence/SettingsRepositoryTests.cs` | 変更 | `"DateSeparator": null` のファイルが、壊れたファイル扱いにならずに読める。項目がないファイルは「/」になる。`null`・空欄・`🍣` が保存して読み直しても同じ値になる (`/speckit-analyze` の指摘 C1) |
+
+### 変更しないもの
+
+- 設定ファイルの形式 (`contracts/settings-file.md`)。`DateSeparator` は今までどおり文字列 1 つ
+- `SettingsRepository` の読み込み。`DateSeparator` が `null` のファイルは、今までどおり読み込み、表示の前に `Resolve` で「/」にする
+- `SettingsRepository` の書き出し方。英数字以外の文字の一部 (日本語・絵文字・`'`・`&` など) は、今までどおり `\uXXXX` の形で書き出す (research.md #21、人間が決定)
+- 区切り文字をアプリ全体で 1 つ持つこと (モニタごとに持つのは issue #53)
+- 利用者向けの説明 (README)。隠し機能とする (spec.md の Clarifications)
+
+## 既存実装に対する変更計画 (2026-10-01、issue #53・#17)
+
+### OkidokeiWidget.Core
+
+| ファイル | 変更 | 内容 |
+|---|---|---|
+| `Settings/MonitorPlacement.cs` | 変更 | `Appearance` (`AppearanceSettings`、初期値 `new()`) と `WindowBehavior` (`WindowBehaviorSettings`、初期値 `new()`) を足す (research.md #22) |
+| `Settings/WidgetSettings.cs` | 変更 | `Appearance`・`WindowBehavior` を null を許す型にし、初期値を null にする。`JsonIgnore(Condition = WhenWritingNull)` を付け、null のときは書き出さない。以前のバージョンの設定ファイルを読むためだけに使うことを XML コメントに書く |
+| `Settings/AppearanceSettings.cs`・`Settings/WindowBehaviorSettings.cs` | 変更 | 複製を返す `Clone()` を足す (`MemberwiseClone`) |
+| `Persistence/MonitorSettingsReconciler.cs` | 変更 | 最初に `Monitors` が空かどうかを覚えておく。FR-040 の付け替えの後に、ルートの `Appearance`・`WindowBehavior` があれば、全エントリへ複製を入れ、接続していないモニタのエントリを非表示にし、ルートの 2 つを null にする。補完するエントリは `IsVisible = false` にし、最初に空だったときだけプライマリモニタ (なければ先頭のモニタ) を `IsVisible = true` にする (research.md #22) |
+| `Persistence/SettingsRepository.cs` | 変更 | `HasNullSection` から、ルートの `Appearance`・`WindowBehavior` の null の判定を外し、各モニタの `Appearance`・`WindowBehavior` の null の判定を足す (contracts/settings-file.md の読み込み契約)。`Save` の `BackgroundOpacity` のクランプを、ルートではなく各モニタの `Appearance` に対して行う (ルートは null でないときだけ)。ルートが null になった後の起動時の `Save` で落ちないようにするため (`/speckit-analyze` の指摘 C1、書き込み契約) |
+
+### OkidokeiWidget.App
+
+| ファイル | 変更 | 内容 |
+|---|---|---|
+| `ClockWindow.xaml.cs` | 変更 | 見た目・位置ロック・最前面表示を、`_settings` ではなく `_placement.Appearance`・`_placement.WindowBehavior` から読む。本体のメニューの位置ロック・最前面表示は、自分の `WindowBehavior` を切り替えて自分にだけ反映し、保存する (全ウィジェットへ反映するコールバックはなくす)。「詳細設定...」は、自分のモニタの `Identifier` を付けて App に知らせる |
+| `App.xaml.cs` | 変更 | `OpenSettingsWindow` にモニタの `Identifier` (タスクトレイからは null) を受け取らせる。開いていなければそのモニタ (null ならプライマリ) を選んで開き、開いていれば `Identifier` があるときだけそのモニタに切り替えて前に出す。見た目が変わったときは、そのモニタのウィジェットにだけ反映して保存する。`OnDisplaySettingsChanged` で、開いている詳細設定画面に接続中のモニタの一覧を渡す (#17)。タスクトレイのメニューを「詳細設定...」「自動起動」「終了」にし、「自動起動」は `AutoStartEnabled` を反転して `OnAutoStartChanged` を呼ぶ (research.md #24) |
+| `SettingsWindow.xaml` | 変更 | `TabControl` の上に「編集するモニター」の `ComboBox` を置く。「モニター・起動」タブをなくし、「表示」タブの先頭に「このモニターに表示する」の `CheckBox` を置く |
+| `PlacementMenuBuilder.cs` | 変更 | トレイのメニューのモニタの項目を作る `Build` を消す。トレイのメニューから配置をなくすと呼ぶ所がなくなるため (原則 I、`/speckit-analyze` の指摘 M3)。本体のメニューが使う `Populate` は残す |
+| `SettingsWindow.xaml.cs` | 変更 | コンストラクタで最初に選ぶモニタの `Identifier` を受け取る。選んだモニタの `MonitorPlacement` の値を全コントロールに入れ直す処理を作り、モニタを選んだとき・選択がプライマリに戻ったときに呼ぶ。各コントロールの変更は、選んだモニタの `MonitorPlacement` に書き込み、`Identifier` を付けて App に知らせる。選択肢を作り直す処理 (接続中のモニタの一覧が変わったとき、表示/非表示を切り替えたとき) と、外からモニタを選ばせる処理を足す。自動起動の処理はなくす (research.md #23) |
+
+### テスト (OkidokeiWidget.Core.Tests)
+
+| ファイル | 変更 | 内容 |
+|---|---|---|
+| `Persistence/MonitorSettingsReconcilerTests.cs` | 変更 | 以前のバージョンの設定の引き継ぎ (接続中・接続していないモニタの両方に複製が入る、接続していないモニタだけ非表示になる、複製が別のインスタンスである、ルートの 2 つが null になる、2 回目の `Reconcile` では何も変わらない、FR-040 で付け替えたモニタは接続中として扱う)、新しいモニタが非表示・既定値で足される、`Monitors` が空のときはプライマリモニタだけ表示される、プライマリモニタが見つからないときは先頭のモニタが表示される。今の「新しいモニタは表示する」前提のテストは、FR-041 で成り立たなくなるので置き換える |
+| `Persistence/SettingsRepositoryTests.cs` | 変更 | 以前のバージョンの形のファイル (ルートに `Appearance`・`WindowBehavior`) が壊れたファイル扱いにならずに読め、ルートの値が残る。新しい形のファイルを保存して読み直すと、各モニタの値が同じになり、ルートの 2 つは書き出されない。各モニタの `Appearance`・`WindowBehavior` が `null` のファイルは壊れたファイルとして扱う。ルートの `Appearance`・`WindowBehavior` が `null` のファイルは壊れたファイルとして扱わない (issue #51 のテストを置き換える) |
+| `Settings/SettingsCloneTests.cs` | 追加 | `AppearanceSettings.Clone()`・`WindowBehaviorSettings.Clone()` が、すべての項目を写し、別のインスタンスを返す (片方を変えても、もう片方は変わらない) |
+
+### 変更しないもの
+
+- `AppearanceSettings`・`WindowBehaviorSettings` の項目と、それぞれの値の扱い (フォールバックなど)
+- `PlacementMenuBuilder.Populate` (位置ロックの値を、そのウィジェットのものに変えて渡すだけ)
+- 自動起動のショートカットを書き換える処理 (`AutoStartManager`) と、書き換えるのは切り替えたときだけという制約 (issue #20)
+- タスクトレイの左クリックで全ウィジェットを前に出す動き (FR-031)
+- モニタの見分け方と付け替え (FR-040、research.md #20)
+
+### 利用者向けの説明
+
+- 公開リポジトリの README に、新しいモニタと、アップデートのときにつないでいなかったモニタには時計が
+  表示されないこと、表示するには詳細設定画面でそのモニタを選ぶことを書く (spec.md の Assumptions)
+- タスクトレイのメニューと詳細設定画面の構成が変わるので、README の操作の説明も合わせて直す
+- 実装の PR では、このリポジトリの README だけを直す。公開リポジトリの README は、公開リポジトリへ反映する
+  ときに直す (tasks の PR で人間が決定。T144。`/speckit-analyze` の指摘 M1)
+
 ## Complexity Tracking
 
-*本セクションに記載すべき Constitution 違反はない(Constitution Check はすべて PASS)。*
+*2026-09-27 までの Constitution Check は、すべて PASS で記載すべき違反はなかった。*
+
+*2026-10-01 (issue #53・#17) は、constitution の違反ではないが、Development Workflow 4 の「1 ユーザーストーリー = 1 PR」から外れて
+implement を 1 つの PR で行うため、下の表に理由を書く (`/speckit-analyze` の指摘 M2)。*
+
+| 逸脱 | 必要な理由 | より単純な代替案を採らなかった理由 |
+|---|---|---|
+| Development Workflow 7 の未確認の前提が 2 つ残る (issue #52、research.md #20): 同じ型番のモニタ 2 台の ID が別々になること、EDID を読めないモニタの ID の形 | 手元に同じ型番のモニタ 2 台も、EDID を読めないモニタもなく、確かめる手段がない | 前提が外れても、今までと同じ動き (2 台が同じキーになり片方のウィジェットしか表示されない、完全一致だけで探す) になり、設定を失わない。確かめるためだけにモニタを用意するのは、個人用ツールとして釣り合わない (原則 I)。US4 のシナリオ 5・7 は単体テストでのみ確かめ、実機では未確認であることを quickstart.md に書いた |
+| Development Workflow 4 の「1 ユーザーストーリー = 1 PR」から外れ、Phase 26 (issue #53・#17) の implement を 1 つの PR で行う。US4 のほか、US3 のシナリオ 13・14 (タスクトレイのメニュー) と US1 のシナリオ 4 (自動起動) の変更を含む | 位置ロック・最前面表示をモニタごとにすると、今のタスクトレイのメニュー (アプリ全体の位置ロック・最前面表示を切り替える) が成り立たなくなる。US3 のタスクトレイの変更 (T141) を、US4 の変更と別の PR に分けて出せない | US3 の PR を先に出す案は、位置ロックがまだアプリ全体で 1 つの間にトレイから外すことになり、トレイから操作できなくなるだけの中間の状態ができる。US4 を先に出す案は、トレイのメニューが壊れた状態を経由する。どちらも 1 つの PR にするより手間が増えるだけなので採らない (人間が決定。tasks.md の Phase 26 の Purpose) |

@@ -18,7 +18,8 @@ public sealed class AppearanceSettings
 
     public string DateFontColor { get; set; } = "#FFFFFFFF";
 
-    public string DateSeparator { get; set; } = "/";
+    // 設定ファイルを手で書き換えると null が入り、そのまま保存し直される (FR-026、data-model.md)
+    public string? DateSeparator { get; set; } = "/";
 
     public DayOfWeekFormat DayOfWeekFormat { get; set; } = DayOfWeekFormat.LongKanji;
 
@@ -27,4 +28,11 @@ public sealed class AppearanceSettings
     public string BackgroundColor { get; set; } = "#FF000000";
 
     public double BackgroundOpacity { get; set; } = 30.0;
+
+    /// <summary>
+    /// 複製を返す。以前のバージョンのアプリ全体で共通の設定を各モニタへ引き継ぐときに、
+    /// モニタごとに別のインスタンスにするためのもの (SC-009、research.md #22)。
+    /// 項目はすべて値型か文字列なので、浅い複製で足りる。
+    /// </summary>
+    public AppearanceSettings Clone() => (AppearanceSettings)MemberwiseClone();
 }

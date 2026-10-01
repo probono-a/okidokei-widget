@@ -41,26 +41,35 @@ public partial class App : System.Windows.Application
         var (settings, fellBackToDefaults) = SettingsRepository.Load();
         _settings = settings;
 
+        // 読み込めなかった設定ファイルは、下の保存で初期設定に上書きされる前に別名で残す (issue #50)
+        var backupPath = fellBackToDefaults ? SettingsRepository.BackupBrokenFile() : null;
+
         RefreshConnectedMonitors();
         SettingsRepository.Save(settings);
 
-        // Startup フォルダのショートカット作成/削除は詳細設定での ON/OFF トグル時
-        // (OnAutoStartChanged) のみ行う。起動のたびにここで書き換えると、Release exe
+        // Startup フォルダのショートカット作成/削除は、タスクトレイのメニューで「自動起動」を
+        // 切り替えたとき (OnAutoStartChanged) のみ行う。起動のたびにここで書き換えると、Release exe
         // 以外の方法 (dotnet run 等) で起動した際にショートカットの対象が意図せず
         // 上書きされてしまうため (issue #20)
         SyncClockWindows();
 
         if (fellBackToDefaults)
         {
+            var message = "設定ファイルの読み込みに失敗したため、デフォルト設定で起動しました。";
+            if (backupPath is not null)
+            {
+                message += $"\n\n元の設定ファイルは次の場所に残してあります。\n{backupPath}";
+            }
+
             MessageBox.Show(
-                "設定ファイルの読み込みに失敗したため、デフォルト設定で起動しました。",
+                message,
                 "OkidokeiWidget",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
         }
 
         // タスクトレイの常駐アイコン: クリックで最前面表示が無効でもウィジェットを前面に呼び戻し、
-        // 右クリックでウィジェット本体と同じ項目のメニューを出す (FR-031, FR-032, FR-038)
+        // 右クリックで「詳細設定」「自動起動」「終了」のメニューを出す (FR-031, FR-032, FR-038)
         _trayIconManager = new TrayIconManager(BuildTrayContextMenu);
         _trayIconManager.ActivateAllRequested += ActivateAllClockWindows;
 
@@ -81,6 +90,9 @@ public partial class App : System.Windows.Application
         RefreshConnectedMonitors();
         SyncClockWindows();
         SettingsRepository.Save(_settings);
+
+        // 詳細設定画面を開いたままモニタを抜き差ししたら、「編集するモニター」の選択肢も追随させる (issue #17)
+        _settingsWindow?.UpdateConnectedMonitors(_connectedMonitors);
     }
 
     /// <summary>
@@ -123,69 +135,37 @@ public partial class App : System.Windows.Application
 
     private void CreateClockWindow(ConnectedMonitor monitor, MonitorPlacement placement)
     {
-        var window = new ClockWindow(_settings, monitor, placement, OpenSettingsWindow, OnWindowBehaviorChanged, OnDisplaySettingsChanged);
+        var window = new ClockWindow(_settings, monitor, placement, OpenSettingsWindow, OnDisplaySettingsChanged);
         _clockWindowsByMonitor[monitor.Identifier] = window;
         window.Show();
     }
 
     /// <summary>
-    /// タスクトレイの右クリックメニューを組み立てる。項目はウィジェット本体と同じで、「配置」の
-    /// 下にだけモニタを選ぶ階層が入る (FR-038、contracts/context-menus.md)。
+    /// タスクトレイの右クリックメニューを組み立てる。項目は「詳細設定」「自動起動」「終了」だけで、
+    /// 位置ロック・最前面表示・配置はモニタごとの設定のため、ウィジェット本体のメニューで切り替える
+    /// (FR-038、contracts/context-menus.md、research.md #24)。
     /// </summary>
     private ContextMenu BuildTrayContextMenu()
     {
-        var behavior = _settings.WindowBehavior;
         var menu = new ContextMenu();
 
+        // タスクトレイにはモニタがないため、詳細設定画面はプライマリモニタを選んだ状態で開く (FR-042)
         var settingsItem = new MenuItem { Header = "詳細設定..." };
-        settingsItem.Click += (_, _) => OpenSettingsWindow();
+        settingsItem.Click += (_, _) => OpenSettingsWindow(null);
         menu.Items.Add(settingsItem);
 
         menu.Items.Add(new Separator());
 
         // Fluent テーマは IsCheckable が true の項目にしかチェックを描かない (issue #34)。
-        // メニューは開くたびに作り直すので、クリックで IsChecked が反転しても表示と食い違わない
-        var positionLockItem = new MenuItem { Header = "位置ロック", IsCheckable = true, IsChecked = behavior.PositionLocked };
-        positionLockItem.Click += (_, _) =>
+        // メニューは開くたびに作り直すので、クリックで IsChecked が反転しても表示と食い違わない。
+        // 切り替えに失敗して値が戻っても、次に開いたときのチェックは正しい (OnAutoStartChanged)
+        var autoStartItem = new MenuItem { Header = "自動起動", IsCheckable = true, IsChecked = _settings.AutoStartEnabled };
+        autoStartItem.Click += (_, _) =>
         {
-            behavior.PositionLocked = !behavior.PositionLocked;
-            OnWindowBehaviorChanged();
+            _settings.AutoStartEnabled = !_settings.AutoStartEnabled;
+            OnAutoStartChanged();
         };
-        menu.Items.Add(positionLockItem);
-
-        var topMostItem = new MenuItem { Header = "最前面表示", IsCheckable = true, IsChecked = behavior.TopMost };
-        topMostItem.Click += (_, _) =>
-        {
-            behavior.TopMost = !behavior.TopMost;
-            OnWindowBehaviorChanged();
-        };
-        menu.Items.Add(topMostItem);
-
-        // モニタが 1 台でもこの階層は省略しない。非表示のモニタは右クリックできるウィジェットが
-        // ないため対象外とする (research.md #17)
-        var placementItem = new MenuItem { Header = "配置" };
-        foreach (var monitor in _connectedMonitors.OrderBy(m => m.DisplayNumber))
-        {
-            if (!_clockWindowsByMonitor.TryGetValue(monitor.Identifier, out var window))
-            {
-                continue;
-            }
-
-            // 詳細設定画面 (SettingsWindow) のモニタ一覧と同じ表記
-            var label = monitor.IsPrimary ? $"モニター {monitor.DisplayNumber} (プライマリ)" : $"モニター {monitor.DisplayNumber}";
-            placementItem.Items.Add(PlacementMenuBuilder.Build(
-                label,
-                _settings.Monitors[monitor.Identifier],
-                behavior.PositionLocked,
-                window.SetAnchorHorizontal,
-                window.SetAnchorVertical,
-                window.SetAnchorMargin,
-                window.CanSelectAnchorMargin));
-        }
-
-        // すべてのモニタで非表示にしていると配置の対象がない
-        placementItem.IsEnabled = placementItem.Items.Count > 0;
-        menu.Items.Add(placementItem);
+        menu.Items.Add(autoStartItem);
 
         menu.Items.Add(new Separator());
 
@@ -217,34 +197,42 @@ public partial class App : System.Windows.Application
         base.OnExit(e);
     }
 
-    private void OpenSettingsWindow()
+    /// <summary>
+    /// 詳細設定画面を開く。<paramref name="identifier"/> は編集するモニタで、ウィジェットのメニューからは
+    /// そのウィジェットのモニタを、タスクトレイからは null を渡す (FR-042)。
+    /// 開いていなければ、そのモニタ (null ならプライマリ) を選んだ状態で開く。
+    /// すでに開いていれば、モニタが渡されたときだけ編集するモニタを切り替えて前に出す。
+    /// </summary>
+    private void OpenSettingsWindow(string? identifier)
     {
         if (_settingsWindow is not null)
         {
+            if (identifier is not null)
+            {
+                _settingsWindow.SelectMonitor(identifier);
+            }
+
             _settingsWindow.Activate();
             return;
         }
 
-        _settingsWindow = new SettingsWindow(_settings, _connectedMonitors, OnAppearanceChanged, OnMonitorVisibilityChanged, OnAutoStartChanged);
+        var initialIdentifier = identifier
+            ?? (_connectedMonitors.FirstOrDefault(m => m.IsPrimary) ?? _connectedMonitors.FirstOrDefault())?.Identifier
+            ?? string.Empty;
+        _settingsWindow = new SettingsWindow(_settings, _connectedMonitors, initialIdentifier, OnAppearanceChanged, OnMonitorVisibilityChanged);
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
     }
 
-    private void OnAppearanceChanged()
+    /// <summary>
+    /// 見た目が変わったモニタのウィジェットにだけ反映して保存する (FR-041)。
+    /// 非表示のモニタにはウィジェットがないので、保存だけ行う。
+    /// </summary>
+    private void OnAppearanceChanged(string identifier)
     {
-        foreach (var window in _clockWindowsByMonitor.Values)
+        if (_clockWindowsByMonitor.TryGetValue(identifier, out var window))
         {
             window.ApplyAppearance();
-        }
-
-        SettingsRepository.Save(_settings);
-    }
-
-    private void OnWindowBehaviorChanged()
-    {
-        foreach (var window in _clockWindowsByMonitor.Values)
-        {
-            window.ApplyWindowBehavior();
         }
 
         SettingsRepository.Save(_settings);
@@ -258,7 +246,20 @@ public partial class App : System.Windows.Application
 
     private void OnAutoStartChanged()
     {
-        AutoStartManager.SetEnabled(_settings.AutoStartEnabled);
+        // Startup フォルダへの書き込み失敗等で切り替えられなくても落とさない (issue #18)。
+        // 設定値を切り替え前に戻す。タスクトレイのメニューは開くたびに作り直すので、
+        // チェックを合わせ直す処理は要らない
+        if (!AutoStartManager.TrySetEnabled(_settings.AutoStartEnabled))
+        {
+            _settings.AutoStartEnabled = !_settings.AutoStartEnabled;
+            MessageBox.Show(
+                "自動起動の設定を変更できませんでした。",
+                "OkidokeiWidget",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
         SettingsRepository.Save(_settings);
     }
 }

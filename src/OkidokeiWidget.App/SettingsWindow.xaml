@@ -60,9 +60,27 @@
         <SolidColorBrush x:Key="TabViewItemHeaderBackgroundSelected" Color="Transparent" />
         <SolidColorBrush x:Key="TabViewSelectedItemBorderBrush" Color="#66757575" />
     </Window.Resources>
-    <TabControl Margin="12" TabStripPlacement="Left">
+    <!-- 上に編集するモニタを選ぶ欄を置き、その下のタブは選んだモニタの設定を表示する (FR-042) -->
+    <Grid>
+    <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <StackPanel Grid.Row="0" Margin="12,12,12,0">
+        <TextBlock Text="編集するモニター" />
+        <ComboBox x:Name="MonitorCombo" DisplayMemberPath="Label" Margin="0"
+                  SelectionChanged="MonitorCombo_SelectionChanged" />
+    </StackPanel>
+    <TabControl Grid.Row="1" Margin="12" TabStripPlacement="Left">
         <TabItem Header="表示">
             <StackPanel Margin="12">
+                <GroupBox>
+                    <StackPanel>
+                        <CheckBox x:Name="MonitorVisibleCheckBox" Content="このモニターに表示する"
+                                  Checked="MonitorVisibleCheckBox_Changed" Unchecked="MonitorVisibleCheckBox_Changed" />
+                    </StackPanel>
+                </GroupBox>
+
                 <GroupBox>
                     <StackPanel>
                         <CheckBox x:Name="ShowDateCheckBox" Content="日付を表示する"
@@ -129,19 +147,6 @@
             </StackPanel>
         </TabItem>
 
-        <TabItem Header="モニター・起動">
-            <StackPanel Margin="12">
-                <GroupBox>
-                    <StackPanel x:Name="MonitorsPanel" />
-                </GroupBox>
-
-                <GroupBox>
-                    <StackPanel>
-                        <CheckBox x:Name="AutoStartCheckBox" Content="Windows 起動時に自動的に起動する"
-                                  Checked="AutoStartCheckBox_Changed" Unchecked="AutoStartCheckBox_Changed" />
-                    </StackPanel>
-                </GroupBox>
-            </StackPanel>
-        </TabItem>
     </TabControl>
+    </Grid>
 </Window>

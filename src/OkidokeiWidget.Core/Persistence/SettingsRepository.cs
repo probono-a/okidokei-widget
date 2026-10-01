@@ -35,7 +35,7 @@ public static class SettingsRepository
         {
             var json = File.ReadAllText(path);
             var settings = JsonSerializer.Deserialize<WidgetSettings>(json, SerializerOptions);
-            return settings is null ? (WidgetSettings.CreateDefault(), true) : (settings, false);
+            return settings is null || HasNullSection(settings) ? (WidgetSettings.CreateDefault(), true) : (settings, false);
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
@@ -43,10 +43,58 @@ public static class SettingsRepository
         }
     }
 
+    /// <summary>
+    /// JSON に明示的な <c>null</c> があると初期値 (<c>= new()</c>) が上書きされ、そのまま使うと落ちる
+    /// ため、パース不可と同じく壊れたファイルとして扱う (issue #51)。
+    /// 2026-10-01 の改訂 (FR-041): 見た目とウィンドウ挙動は各モニタが持つため、各モニタの値の null を見る。
+    /// ルートの <c>Appearance</c>・<c>WindowBehavior</c> は、以前のバージョンのファイルを読むときにしか使わないので、
+    /// null でも壊れたファイルとは扱わない (contracts/settings-file.md の読み込み契約)。
+    /// </summary>
+    private static bool HasNullSection(WidgetSettings settings) =>
+        settings.Monitors is null
+        || settings.Monitors.Values.Any(placement =>
+            placement is null || placement.Appearance is null || placement.WindowBehavior is null);
+
+    /// <summary>
+    /// 読み込めなかった設定ファイルを <c>settings.json.bak</c> としてコピーして残し、そのパスを返す。
+    /// 初期設定で上書きされる前に呼ぶことで、ユーザーが元のファイルを手で直せるようにする (issue #50)。
+    /// ファイルが存在しない、またはコピーできなかった場合は null を返す。
+    /// </summary>
+    public static string? BackupBrokenFile(string? path = null)
+    {
+        path ??= DefaultSettingsFilePath;
+        var backupPath = path + ".bak";
+
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            File.Copy(path, backupPath, overwrite: true);
+            return backupPath;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     public static void Save(WidgetSettings settings, string? path = null)
     {
         path ??= DefaultSettingsFilePath;
-        settings.Appearance.BackgroundOpacity = Math.Clamp(settings.Appearance.BackgroundOpacity, 0.0, 100.0);
+        // 2026-10-01 からは各モニタの値をクランプする。ルートの値は、以前のバージョンのファイルを
+        // 引き継ぐ前だけ残っている (引き継いだ後は null。research.md #22)
+        foreach (var placement in settings.Monitors.Values)
+        {
+            placement.Appearance.BackgroundOpacity = Math.Clamp(placement.Appearance.BackgroundOpacity, 0.0, 100.0);
+        }
+
+        if (settings.Appearance is not null)
+        {
+            settings.Appearance.BackgroundOpacity = Math.Clamp(settings.Appearance.BackgroundOpacity, 0.0, 100.0);
+        }
 
         try
         {

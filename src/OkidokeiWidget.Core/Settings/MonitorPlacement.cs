@@ -13,4 +13,11 @@ public sealed class MonitorPlacement
     public AnchorPosition? Anchor { get; set; }
 
     public AnchorMargin AnchorMargin { get; set; } = AnchorMargin.Narrow;
+
+    // このモニタの見た目 (FR-041)。以前のバージョンの設定ファイルにはないため、読み込むと既定値になる。
+    // 以前のバージョンの共通の見た目は、MonitorSettingsReconciler.Reconcile が各モニタへ引き継ぐ (research.md #22)
+    public AppearanceSettings Appearance { get; set; } = new();
+
+    // このモニタの位置ロック・最前面表示 (FR-041)。扱いは Appearance と同じ
+    public WindowBehaviorSettings WindowBehavior { get; set; } = new();
 }

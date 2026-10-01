@@ -7,17 +7,19 @@ public class DateSeparatorResolverTests
     [Theory]
     [InlineData("/")]
     [InlineData("-")]
-    public void Resolve_許可された区切り文字はそのまま返す(string separator)
+    [InlineData(".")]
+    [InlineData("")]
+    [InlineData("//")]
+    [InlineData("🍣")]
+    public void Resolve_nullでなければそのまま返す(string separator)
     {
+        // 設定ファイルでは選択肢以外の文字列 (空欄を含む) も使える (FR-026)
         Assert.Equal(separator, DateSeparatorResolver.Resolve(separator));
     }
 
-    [Theory]
-    [InlineData("")]
-    [InlineData(".")]
-    [InlineData("//")]
-    public void Resolve_許可されていない値はデフォルトを返す(string separator)
+    [Fact]
+    public void Resolve_nullはデフォルトを返す()
     {
-        Assert.Equal(DateSeparatorResolver.DefaultSeparator, DateSeparatorResolver.Resolve(separator));
+        Assert.Equal(DateSeparatorResolver.DefaultSeparator, DateSeparatorResolver.Resolve(null));
     }
 }

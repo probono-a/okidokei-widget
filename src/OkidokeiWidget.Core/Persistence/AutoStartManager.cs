@@ -31,6 +31,24 @@ public static class AutoStartManager
         }
     }
 
+    /// <summary>
+    /// <see cref="SetEnabled"/> と同じく自動起動を切り替えるが、Startup フォルダへの書き込み失敗等で
+    /// 切り替えられなかった場合は例外を投げずに false を返す。失敗してもアプリを落とさないため
+    /// (issue #18、constitution 原則 VI)。
+    /// </summary>
+    public static bool TrySetEnabled(bool enabled, string? executablePath = null, string? startupFolderPath = null)
+    {
+        try
+        {
+            SetEnabled(enabled, executablePath, startupFolderPath);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or COMException or InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
     private static void CreateShortcut(string shortcutPath, string targetPath)
     {
         var directory = Path.GetDirectoryName(shortcutPath);

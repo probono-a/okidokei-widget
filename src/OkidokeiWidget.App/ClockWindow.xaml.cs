@@ -19,8 +19,7 @@ public partial class ClockWindow : Window
     private readonly WidgetSettings _settings;
     private readonly MonitorPlacement _placement;
     private ConnectedMonitor _monitor;
-    private readonly Action _openSettingsWindow;
-    private readonly Action _onWindowBehaviorChanged;
+    private readonly Action<string> _openSettingsWindow;
     private readonly Action _onDpiChanged;
     private readonly DispatcherTimer _timer;
     private bool _isDragging;
@@ -32,8 +31,7 @@ public partial class ClockWindow : Window
         WidgetSettings settings,
         ConnectedMonitor monitor,
         MonitorPlacement placement,
-        Action openSettingsWindow,
-        Action onWindowBehaviorChanged,
+        Action<string> openSettingsWindow,
         Action onDpiChanged)
     {
         InitializeComponent();
@@ -42,7 +40,6 @@ public partial class ClockWindow : Window
         _placement = placement;
         _monitor = monitor;
         _openSettingsWindow = openSettingsWindow;
-        _onWindowBehaviorChanged = onWindowBehaviorChanged;
         _onDpiChanged = onDpiChanged;
 
         // MonitorPlacement.X/Y はモニタの作業領域左上を基準とした相対座標のため、仮想
@@ -75,6 +72,16 @@ public partial class ClockWindow : Window
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += (_, _) => UpdateClockText();
         _timer.Start();
+    }
+
+    /// <summary>
+    /// 動作中の <see cref="DispatcherTimer"/> は Dispatcher から参照され続け、Tick がこのウィンドウを
+    /// 掴んでいるため、止めないと閉じたウィンドウが解放されずに毎秒の更新を続ける (issue #49)。
+    /// </summary>
+    protected override void OnClosed(EventArgs e)
+    {
+        _timer.Stop();
+        base.OnClosed(e);
     }
 
     /// <summary>
@@ -111,12 +118,12 @@ public partial class ClockWindow : Window
 
     /// <summary>
     /// このモニタの横位置を変更してアンカー指定にする。縦位置は、アンカー指定中ならそのまま、
-    /// 自由配置中なら今の位置から一番近いものにする (research.md #15)。本体とタスクトレイの
-    /// どちらのメニューからもこの経路で変更する (research.md #17)。位置ロック中は何もしない (FR-010)。
+    /// 自由配置中なら今の位置から一番近いものにする (research.md #15)。
+    /// 本体のメニューからこの経路で変更する (research.md #17)。位置ロック中は何もしない (FR-010)。
     /// </summary>
     public void SetAnchorHorizontal(AnchorHorizontal horizontal)
     {
-        if (_settings.WindowBehavior.PositionLocked || WindowPositionHelper.TryGetBounds(this) is not { } bounds)
+        if (_placement.WindowBehavior.PositionLocked || WindowPositionHelper.TryGetBounds(this) is not { } bounds)
         {
             return;
         }
@@ -130,7 +137,7 @@ public partial class ClockWindow : Window
     /// </summary>
     public void SetAnchorVertical(AnchorVertical vertical)
     {
-        if (_settings.WindowBehavior.PositionLocked || WindowPositionHelper.TryGetBounds(this) is not { } bounds)
+        if (_placement.WindowBehavior.PositionLocked || WindowPositionHelper.TryGetBounds(this) is not { } bounds)
         {
             return;
         }
@@ -152,7 +159,7 @@ public partial class ClockWindow : Window
     /// </summary>
     public void SetAnchorMargin(AnchorMargin margin)
     {
-        if (_settings.WindowBehavior.PositionLocked)
+        if (_placement.WindowBehavior.PositionLocked)
         {
             return;
         }
@@ -200,7 +207,7 @@ public partial class ClockWindow : Window
         PlacementMenuBuilder.Populate(
             PlacementMenuItem,
             _placement,
-            _settings.WindowBehavior.PositionLocked,
+            _placement.WindowBehavior.PositionLocked,
             SetAnchorHorizontal,
             SetAnchorVertical,
             SetAnchorMargin,
@@ -209,7 +216,7 @@ public partial class ClockWindow : Window
 
     public void ApplyWindowBehavior()
     {
-        var behavior = _settings.WindowBehavior;
+        var behavior = _placement.WindowBehavior;
 
         Topmost = behavior.TopMost;
         PositionLockMenuItem.IsChecked = behavior.PositionLocked;
@@ -218,7 +225,7 @@ public partial class ClockWindow : Window
 
     public void ApplyAppearance()
     {
-        var appearance = _settings.Appearance;
+        var appearance = _placement.Appearance;
 
         DateText.Visibility = appearance.ShowDate ? Visibility.Visible : Visibility.Collapsed;
         DayOfWeekText.Visibility = appearance.ShowDayOfWeek ? Visibility.Visible : Visibility.Collapsed;
@@ -242,8 +249,8 @@ public partial class ClockWindow : Window
 
         var timeFontSize = appearance.TimeFontSize > 0 ? appearance.TimeFontSize : DefaultTimeFontSize;
         var dateFontSize = appearance.DateFontSize > 0 ? appearance.DateFontSize : DefaultDateFontSize;
-        var timeForeground = new SolidColorBrush(ParseColor(ColorHexResolver.Resolve(appearance.TimeFontColor)));
-        var dateForeground = new SolidColorBrush(ParseColor(ColorHexResolver.Resolve(appearance.DateFontColor)));
+        var timeForeground = CreateFrozenBrush(ParseColor(ColorHexResolver.Resolve(appearance.TimeFontColor)));
+        var dateForeground = CreateFrozenBrush(ParseColor(ColorHexResolver.Resolve(appearance.DateFontColor)));
 
         TimeText.FontFamily = fontFamily;
         TimeText.FontSize = timeFontSize;
@@ -260,8 +267,16 @@ public partial class ClockWindow : Window
         // BackgroundColor の A 成分は無視し、実際のアルファ値は BackgroundOpacity から算出する (FR-030)
         var alpha = BackgroundAlphaResolver.Resolve(appearance.BackgroundOpacity);
         var backgroundRgb = ParseColor(ColorHexResolver.Resolve(appearance.BackgroundColor));
-        BackgroundBorder.Background = new SolidColorBrush(
+        BackgroundBorder.Background = CreateFrozenBrush(
             System.Windows.Media.Color.FromArgb(alpha, backgroundRgb.R, backgroundRgb.G, backgroundRgb.B));
+    }
+
+    // 色を変えるときはブラシを作り直すので、作ったブラシは変更しない。Freeze して WPF の変更監視を省く (issue #15)
+    private static SolidColorBrush CreateFrozenBrush(System.Windows.Media.Color color)
+    {
+        var brush = new SolidColorBrush(color);
+        brush.Freeze();
+        return brush;
     }
 
     private static System.Windows.Media.Color ParseColor(string argbHex)
@@ -276,30 +291,33 @@ public partial class ClockWindow : Window
     private void UpdateClockText()
     {
         var now = DateTime.Now;
-        var appearance = _settings.Appearance;
+        var appearance = _placement.Appearance;
 
         TimeText.Text = appearance.ShowSeconds ? now.ToString("HH:mm:ss") : now.ToString("HH:mm");
 
-        var separator = DateSeparatorResolver.Resolve(appearance.DateSeparator);
-        DateText.Text = now.ToString($"yyyy{separator}MM{separator}dd");
+        DateText.Text = DateTextFormatter.Format(now, appearance.DateSeparator);
         DayOfWeekText.Text = DayOfWeekFormatter.Format(now.DayOfWeek, appearance.DayOfWeekFormat);
     }
 
     private void OpenSettingsMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        _openSettingsWindow();
+        // 詳細設定画面は、このウィジェットのモニタを選んだ状態で開く (FR-042)
+        _openSettingsWindow(_monitor.Identifier);
     }
 
+    // 位置ロック・最前面表示はモニタごとの設定のため、このウィジェットにだけ反映して保存する (FR-012、FR-041)
     private void PositionLockMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        _settings.WindowBehavior.PositionLocked = PositionLockMenuItem.IsChecked;
-        _onWindowBehaviorChanged();
+        _placement.WindowBehavior.PositionLocked = PositionLockMenuItem.IsChecked;
+        ApplyWindowBehavior();
+        SettingsRepository.Save(_settings);
     }
 
     private void TopMostMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        _settings.WindowBehavior.TopMost = TopMostMenuItem.IsChecked;
-        _onWindowBehaviorChanged();
+        _placement.WindowBehavior.TopMost = TopMostMenuItem.IsChecked;
+        ApplyWindowBehavior();
+        SettingsRepository.Save(_settings);
     }
 
     private void ExitMenuItem_Click(object sender, RoutedEventArgs e)
@@ -309,7 +327,7 @@ public partial class ClockWindow : Window
 
     private void BackgroundBorder_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (_settings.WindowBehavior.PositionLocked)
+        if (_placement.WindowBehavior.PositionLocked)
         {
             return;
         }

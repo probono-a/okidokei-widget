@@ -36,7 +36,16 @@ public partial class ColorPickerWindow : Window
         UpdatePreview();
     }
 
-    private static PaletteEntry Entry(string argbHex) => new(argbHex, new SolidColorBrush(ParseArgb(argbHex)));
+    private static PaletteEntry Entry(string argbHex) => new(argbHex, CreateFrozenBrush(ParseArgb(argbHex)));
+
+    // パレットのブラシは画面を開くたびに使い回し、プレビューは色が変わるたびに作り直す。
+    // どちらも作った後は変更しないので Freeze する (issue #15)
+    private static SolidColorBrush CreateFrozenBrush(Color color)
+    {
+        var brush = new SolidColorBrush(color);
+        brush.Freeze();
+        return brush;
+    }
 
     private void PaletteButton_Click(object sender, RoutedEventArgs e)
     {
@@ -54,7 +63,7 @@ public partial class ColorPickerWindow : Window
     private void UpdatePreview()
     {
         var resolved = ColorHexResolver.Resolve(FromRgbHexToArgb(HexTextBox.Text));
-        PreviewSwatch.Background = new SolidColorBrush(ParseArgb(resolved));
+        PreviewSwatch.Background = CreateFrozenBrush(ParseArgb(resolved));
     }
 
     private void OkButton_Click(object sender, RoutedEventArgs e)

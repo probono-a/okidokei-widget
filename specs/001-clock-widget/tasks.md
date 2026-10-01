@@ -911,6 +911,552 @@ specify から implement までを 1 ブランチ (`feature/margin-in-free-place
 
 ---
 
+## Phase 20: 閉じたウィジェットの時計更新タイマーが止まらないバグの修正 (2026-09-28)
+
+**Purpose**: issue #49 の修正の記録。constitution 原則 VI の「作ったリソース (タイマー、イベントの
+購読など) は後始末する」を満たせていなかった実装バグであり、仕様の追加・変更は伴わない。修正は
+`bug` 拡張のフローで行った (経緯・検証結果は `.specify/bugs/clock-timer-leak/` を参照)
+
+- issue #49: 閉じた `ClockWindow` の `DispatcherTimer` が止まらず、ウィンドウが解放されずに毎秒の
+  更新を続ける
+  - モニタの取り外しや、詳細設定でのモニタの非表示のたびに 1 つずつ溜まる
+
+- [X] T106 [US1] `src/OkidokeiWidget.App/ClockWindow.xaml.cs` で `OnClosed` を override し、
+      時計更新タイマーを止める (issue #49、T018 の修正)
+
+**Checkpoint**: `dotnet build`・`dotnet test` が成功すること。見た目には変化がないため、実機では
+モニタの表示/非表示の切り替えで落ちないことだけを確認する
+
+---
+
+## Phase 21: 詳細設定で自動起動を切り替えたときに失敗するとアプリが落ちるバグの修正 (2026-09-28)
+
+**Purpose**: issue #18 の修正の記録。FR-019 (自動起動の ON/OFF) の実装で、失敗しても落ちない
+(constitution 原則 VI) を満たせていなかった実装バグであり、仕様の追加・変更は伴わない。修正は
+`bug` 拡張のフローで行った (経緯・検証結果は `.specify/bugs/autostart-toggle-crash/` を参照)
+
+- issue #18: Startup フォルダへの書き込み失敗等でショートカットの作成・削除に失敗すると、未処理例外で
+  アプリごと落ちる
+  - 起動時の呼び出しは issue #20 の修正で削除済みで、詳細設定での切り替え時だけが残っていた
+
+- [X] T107 [US1] `src/OkidokeiWidget.Core/Persistence/AutoStartManager.cs` に、失敗したら例外を
+      投げずに false を返す `TrySetEnabled` を追加する (issue #18、T020 の修正)
+- [X] T108 [P] [US1] `tests/OkidokeiWidget.Core.Tests/Persistence/AutoStartManagerTests.cs` に、
+      ショートカットを保存できない場合・Startup フォルダを作れない場合に `TrySetEnabled` が false を
+      返すテストを追加する (T107 に依存)
+- [X] T109 [US4] `src/OkidokeiWidget.App/App.xaml.cs` の `OnAutoStartChanged` を `TrySetEnabled` に
+      切り替え、失敗したら設定値を戻して MessageBox で知らせる。`SettingsWindow` はチェックの表示を
+      設定値に合わせ直す (issue #18、T035 の修正) (T107 に依存)
+
+**Checkpoint**: `dotnet build`・`dotnet test` が成功すること。実機では、Startup フォルダに
+`OkidokeiWidget.lnk` という名前のフォルダを作った状態で自動起動をオンにし、落ちずにメッセージが
+出てチェックが外れることを確認する
+
+---
+
+## Phase 22: 壊れた設定ファイルの上書き・一部が null の設定ファイルで落ちるバグの修正 (2026-09-28)
+
+**Purpose**: issue #50・#51 の修正の記録。FR-018 (読めない設定ファイルでもデフォルト設定で起動し、
+通知する) の実装で、constitution 原則 VI の「失敗しても落ちない・設定を失わない」を満たせていなかった
+実装バグであり、spec.md の変更は伴わない。読み込み時の動きを定める `contracts/settings-file.md` は
+実装に合わせて直した。修正は `bug` 拡張のフローで行った (経緯・検証結果は
+`.specify/bugs/broken-settings-file/` を参照)
+
+- issue #50: 読めない設定ファイルを、警告を出す前にデフォルト設定で上書きしてしまい、元の設定が失われる
+- issue #51: 設定の一部が `null` だと、起動直後の保存で NullReferenceException になりアプリが落ちる
+  - #51 だけ直すと「落ちる」が「設定が消える」(#50 の症状) に変わるだけなので、一緒に直した
+
+- [X] T110 `src/OkidokeiWidget.Core/Persistence/SettingsRepository.cs` の `Load` で、
+      `Appearance`・`WindowBehavior`・`Monitors`・各モニタの値の `null` をパース不可として扱う
+      (issue #51、T011 の修正)
+- [X] T111 [US1] `SettingsRepository` に、読めなかった設定ファイルを `settings.json.bak` として
+      残す `BackupBrokenFile` を追加し、`App.OnStartup` で起動時の保存より前に呼ぶ。警告文に
+      残した場所を書き添える (issue #50、T016 の修正) (T110 に依存)
+- [X] T112 [P] `tests/OkidokeiWidget.Core.Tests/Persistence/SettingsRepositoryTests.cs` に、
+      `null` を含む設定ファイルのフォールバックと、`.bak` が後の保存で上書きされないことのテストを
+      追加する (T110, T111 に依存)
+- [X] T113 [P] `specs/001-clock-widget/contracts/settings-file.md` の「読み込み契約」に、`null` の
+      扱いと `.bak` を残すことを追記する
+
+**Checkpoint**: `dotnet build`・`dotnet test` が成功すること。実機では、`settings.json` の末尾の
+`}` を消した場合と `"Appearance": null` にした場合のそれぞれで、落ちずに警告が出て、
+`settings.json.bak` に元の内容が残っていることを確認する
+
+---
+
+## Phase 23: 別の端子につなぎ直したモニタの設定を引き継ぐ (2026-09-28)
+
+**Purpose**: issue #52 を受けた FR-040 の新設と SC-005 の改訂に対応する。すべて User Story 4
+「マルチモニタ環境でモニタごとに管理する」に属する。constitution v1.6.0 の小さな変更として、
+specify から implement までを 1 ブランチ (`feature/monitor-identity`)・1PR で進める。
+設計は plan.md の「既存実装に対する変更計画 (2026-09-28、issue #52)」と research.md #20 に従う
+
+- 設定ファイルのキーの形は変えない (端子ごとの値を含むデバイスインターフェース名のまま)
+- キーが一致する設定がないモニタには、同じ型番の使われていない設定を、キーの順に 1 対 1 で
+  割り当て、今のキーへ移す
+
+**Independent Test**: 型番の違うモニタのケーブルを別の端子につなぎ直してアプリを起動すると、
+つなぎ直す前と同じ位置にウィジェットが出ること。`settings.json` に古いキーが残っていないこと
+
+### Core: 型番の取り出しと、同じ型番の設定の付け替え
+
+- [X] T114 [P] [US4] `src/OkidokeiWidget.Core/Monitors/MonitorIdentifier.cs` に、ID から型番を
+      取り出す公開メソッド `string? GetModel(string identifier)` を追加する (research.md #20)
+      - ID を `#` で区切った 2 つ目の部分を返す。区切った結果が 3 つ未満 (`\\.\DISPLAY1` など)、
+        または 2 つ目が空なら null を返す
+      - `GetStableIdsByAdapterDeviceName` の XML コメントの「EDID 由来の安定したモニタ ID」を、
+        「型番 (EDID 由来) と端子ごとの値からなる ID。端子を変えると変わる」という実態に合わせて直し、
+        research.md #2 の訂正と #20 を参照する
+- [X] T115 [P] [US4] `src/OkidokeiWidget.Core/Monitors/ConnectedMonitor.cs` の XML コメントの
+      「`Identifier` は EDID 由来の安定した ID」を、T114 と同じく実態に合わせて直す
+- [X] T116 [US4] `src/OkidokeiWidget.Core/Persistence/MonitorSettingsReconciler.cs` の `Reconcile` を、
+      research.md #20 の 3 段で割り当てるように変える (T114 に依存)
+      - 1: 接続中のモニタのうち、キーが `settings.Monitors` にあるものはそのまま使う
+      - 2: 残ったモニタのうち `MonitorIdentifier.GetModel` が null でないものを、型番ごとに分ける
+        (大文字・小文字も区別して比べる)。型番ごとに、同じ型番の保存済みの設定のうち、キーが接続中の
+        どのモニタのキーとも一致しないものを集める。モニタ・設定をどちらもキーの順
+        (`StringComparer.Ordinal`) に並べ、先頭から 1 対 1 に組み合わせる
+      - 残ったモニタは、キーの重複を除いてから並べる (同じキーのモニタが複数あっても、組み合わせるのは
+        1 回だけ。research.md #20 の 2 の補足、`/speckit-analyze` の 4 回目の指摘 H1)
+      - 組み合わせた `MonitorPlacement` のインスタンスは今のキーへ移し、古いキーを消す。複製はしない
+        (`ClockWindow` が同じインスタンスを持っているため。plan.md の変更計画)
+      - 3: 組み合わせる設定がなかったモニタと、型番が null のモニタには、今までどおりデフォルト値を足す
+      - クラスの XML コメントに、この探し方と FR-040・research.md #20 への参照を足す
+- [X] T117 [P] [US4] `tests/OkidokeiWidget.Core.Tests/Monitors/MonitorIdentifierTests.cs` を追加し、
+      `GetModel` のテストを書く (T114 に依存)
+      - 実際の形の ID (`\\?\DISPLAY#SNYAE04#5&3b7d6ecd&0&UID4352#{e6f07b5f-...}`) → `SNYAE04`
+      - `\\.\DISPLAY1` (ID が取れなかったとき) → null
+      - 2 つ目が空の ID → null
+      - `#` で 2 つにしか区切れない ID (`\\?\DISPLAY#SNYAE04`) → null
+      - 末尾が `#` で終わる ID (`\\?\DISPLAY#SNYAE04#`) → 3 つに区切れるので `SNYAE04`
+- [X] T118 [US4] `tests/OkidokeiWidget.Core.Tests/Persistence/MonitorSettingsReconcilerTests.cs` に、
+      research.md #20 の場合分けのテストを追加する (T116 に依存)
+      - 型番の違うモニタを別の端子につなぎ直した → 前の設定 (位置・表示/非表示・アンカー) が
+        新しいキーで使われ、古いキーは消える。移した後もインスタンスが同じである
+      - 型番の違う 2 台の端子を入れ替えた → それぞれの設定が入れ替わった先のキーへ移る
+      - 同じ型番の 2 台が端子ごとに設定を持っている → どちらもそのまま使われる
+      - 1 台だけだった型番に、同じ型番がもう 1 台増えた → 同じ端子の方は前の設定、もう 1 台はデフォルト値。
+        接続中のモニタの並び順に左右されないことを確かめるため、新しい方を先に並べた場合も試す
+      - 1 台だけだった型番のモニタを別の端子へ移し、同時に同じ型番をもう 1 台つないだ (どちらも前の
+        端子ではない) → キーの順で先のモニタが前の設定を使い、もう 1 台はデフォルト値
+      - 同じ型番の 2 台の設定があり、1 台を外して、残りを外した方が使っていた端子へつないだ → その端子の
+        設定が使われる (spec.md の Edge Cases)
+      - 同じ型番の 2 台の設定があり、1 台だけが別の端子 (どちらの設定もない端子) につながった → 2 つの
+        設定のうちキーの順で先の方が移される。もう 1 つは古いキーのまま残る
+      - 同じ型番の 2 台を、2 台とも別の端子につなぎ直した → 2 つの設定がキーの順に 1 つずつ移され、
+        デフォルト値は足されない (spec.md の US4 シナリオ 7)
+      - 型番の違う 2 台が、それぞれの型番の中で組み合わされ、別の型番の設定を使わない
+      - 同じ型番の 2 台の設定 (K1・K2) があり、C は K1 のまま、D だけ設定のない端子 (K3) へ移した →
+        C は K1 をそのまま使い、D には K2 が移される (使われている K1 を横取りしない。`/speckit-analyze`
+        の 4 回目の指摘 M1)
+      - 同じ型番の設定が 2 つ (K1・K2) あり、接続中の 2 台が同じキー K3 になっている (research.md #20 の
+        未確認の前提 3 が外れた場合) → K3 には K1 だけが移され、K2 は古いキーのまま残る。どの設定も
+        失われない (指摘 H1)
+      - 型番が取れない ID (`\\.\DISPLAY1`) → 今までどおりデフォルト値
+      - 以前のバージョンの設定ファイルと同じキーのまま接続されている → 何も変わらない (既存の
+        「既存エントリのあるモニタは上書きしない」テストで押さえられていることを確かめる)
+
+### 記録と確認
+
+- [X] T119 [P] [US4] `specs/001-clock-widget/checklists/` 以外で、モニタの ID を「EDID 由来の安定した
+      ID」と書いているところが残っていないかを `grep` で確かめ、見つかれば直すか訂正を注記する。
+      `tasks.md` の完了済みタスクと、research.md #2・plan.md の最初の Constitution Check と
+      Primary Dependencies は当時の記録として本文を直さない (訂正を注記済み。`/speckit-analyze` の指摘 S1)
+- [X] T120 [US4] `dotnet build`・`dotnet test` が成功することを確認し、`quickstart.md` の
+      「US4: マルチモニタでの独立管理」のうち、ケーブルのつなぎ直しと以前のバージョンの設定ファイルの
+      シナリオを人間に実施してもらう。結果を本 Phase の末尾に記録する (T114〜T119 に依存)
+      - 始める前に、`settings.json` の `Monitors` に、型番ごとの設定が 1 つずつしかないことを確かめる。
+        同じ型番の設定が 2 つあると、Edge Cases のとおり本来とは別の設定が割り当てられることがあり、実装の不具合と見分けがつかない
+      - 開発機では、K1 の確認で DELL を別の端子 (`UID4355`) に挿し替えた後、アプリを起動していない。
+        `settings.json` の DELL の設定は前の端子 (`UID4353`) のキーのままなので、新しい版を起動する
+        だけで、別の端子へのつなぎ直しを確かめられる。自動起動などで v1.2 が起動してしまい、DELL の設定が 2 つ (`UID4353` と `UID4355`) になっていたら、`UID4355` の方を消してから始める
+      - research.md #20 の 2 つ目の前提 (端子を変えると ID の端子ごとの部分が変わる) は、
+        `/speckit-analyze` の指摘 K1 を受けて実装の前に確かめた。ここでは、新しい版で古いキーが
+        新しいキーへ移ることを `settings.json` で確かめる
+      - 同じ型番のモニタ 2 台の場合 (US4 のシナリオ 5・7) は、T118 の単体テストでのみ確かめる。
+        実機では未確認のまま、と記録する
+
+**Checkpoint**: `dotnet test` が全件成功し、型番の違うモニタを別の端子につなぎ直しても、前の
+表示/非表示・位置が引き継がれる状態。以前のバージョンの `settings.json` のままアップデートしても、
+各モニタの位置が変わらないこと
+
+### Phase 23 の確認結果 (2026-09-28)
+
+- `dotnet build` (Debug、警告 0、エラー 0)、`dotnet test` (119 件すべて合格。Phase 23 で 18 件を追加)
+- 始める前に、`settings.json` の `Monitors` が型番ごとに 1 つずつ (SONY `UID4352`・DELL `UID4353`) で
+  あることを確かめた。DELL は K1 の確認で別の端子 (`UID4355`) につないだまま、アプリは起動していなかった
+- 人間が Debug 版を実機で起動した。SONY・DELL とも、今までどおりの位置にウィジェットが出た
+  - DELL の設定 (X=737, Y=9, 右上のアンカー) は、同じ値のまま `UID4355` のキーへ移り、`UID4353` の
+    キーは残っていなかった (US4 のシナリオ 4)
+  - SONY は、以前のバージョンの設定のまま、今までどおりの位置に出た (US4 のシナリオ 6)
+- アプリを起動したまま、人間が DELL のケーブルを元の端子に戻した。ウィジェットの位置は変わらず、
+  設定は `UID4353` のキーへ戻り、`UID4355` のキーは残っていなかった (起動中のつなぎ直し)
+- 同じ型番のモニタ 2 台の場合 (US4 のシナリオ 5・7) は、T118 の単体テストでのみ確かめた。実機では未確認
+
+---
+
+## Phase 24: コードで作る色のブラシを Freeze していない問題の修正 (2026-09-28)
+
+**Purpose**: issue #15 の修正の記録。FR-005〜FR-008 (見た目のカスタマイズ) の実装で、作った後に
+変更しないブラシを変更可能なまま使っていた。見た目の変化はなく、仕様の追加・変更は伴わない。修正は
+`bug` 拡張のフローで行った (経緯・検証結果は `.specify/bugs/freeze-brushes/` を参照)
+
+- issue #15: `ClockWindow.ApplyAppearance()` で作る文字色・背景色の `SolidColorBrush` に `Freeze()` していない
+  - 同じ作りの `ColorPickerWindow` のパレットとプレビューのブラシも、あわせて直した
+
+- [X] T121 [US2] `src/OkidokeiWidget.App/ClockWindow.xaml.cs` の `ApplyAppearance()` で、文字色 2 つと
+      背景色のブラシを Freeze してから使う (issue #15、T023・T055 の修正)
+- [X] T122 [P] [US2] `src/OkidokeiWidget.App/ColorPickerWindow.xaml.cs` で、パレットとプレビューの
+      ブラシを Freeze してから使う (issue #15)
+
+**Checkpoint**: `dotnet build`・`dotnet test` が成功すること。見た目には変化がないため、実機では
+文字色・背景色・背景透過度の変更と、色の選択画面の表示が今までどおり動くことだけを確認する
+
+---
+
+## Phase 25: 日付の区切り文字に「.」と任意の文字を使えるようにする (2026-09-28)
+
+**Purpose**: issue #60 を受けた FR-026 の改訂に対応する。User Story 2「見た目を自分好みにカスタマイズする」に
+属する。小さな変更として、specify から implement までを 1 ブランチ (`feature/date-separator`)・1PR で進める。
+設計は plan.md の「既存実装に対する変更計画 (2026-09-28、issue #60)」と research.md #21 に従う
+
+- 設定ファイルの形は変えない (`DateSeparator` は今までどおり文字列 1 つ)
+- T049 (`DateSeparatorResolver` の許可リスト) は当時の記録として本文を直さない。本 Phase で置き換える
+
+**Independent Test**: 詳細設定画面で「.」を選ぶと `2026.09.28` になること。アプリを終了して
+`settings.json` の `DateSeparator` を `"🍣"` にすると `2026🍣09🍣28` と表示され、詳細設定画面の区切り文字の
+欄が空欄になり、選び直さない限り `"🍣"` のまま残ること
+
+### Core: 区切り文字の扱いと日付の文字列
+
+- [X] T123 [US2] `src/OkidokeiWidget.Core/Settings/DateSeparatorResolver.cs` の `Resolve` と、
+      `src/OkidokeiWidget.Core/Settings/AppearanceSettings.cs` の `DateSeparator` を、FR-026 の改訂に合わせて変える
+      (research.md #21)
+      - `AppearanceSettings.DateSeparator` の型を `string?` にする。既定値は今までどおり `"/"`
+        (設定ファイルから `null` が入り、そのまま保存し直されるため。`/speckit-analyze` の指摘 I1)
+      - `Resolve` の引数を `string?` にし、`null` のときだけ `DefaultSeparator` (「/」) を返す。それ以外 (空欄・選択肢に
+        ない文字列を含む) はそのまま返す
+      - 許可リスト `AllowedSeparators` と `using System.Linq;` を消す (Core は `ImplicitUsings` が有効なので、using はもともと不要)
+      - XML コメントを data-model.md の「詳細設定画面の選択肢は `/`・`-`・`.`。設定ファイルでは任意の文字列
+        (空欄を含む) を使える。`null` のときだけデフォルト (`/`) にフォールバック」に合わせて直す
+- [X] T124 [US2] `src/OkidokeiWidget.Core/Settings/DateTextFormatter.cs` を追加し、`DateTime` と区切り文字
+      (`string?`) から日付の文字列を作る `Format` を実装する (T123 に依存)
+      - 区切り文字は `DateSeparatorResolver.Resolve` を通す
+      - 年は 4 桁、月・日は 2 桁の数字にし、`年{区切り}月{区切り}日` の順につなぎ合わせる。書式文字列に
+        区切り文字を埋め込まない (`y`・`M`・`d` などが書式の記号として解釈されないようにするため)
+      - 数字は地域設定によらず 0〜9 で出す (`CultureInfo.InvariantCulture` を使う)
+      - クラスの XML コメントに、つなぎ合わせる理由と FR-026・research.md #21 への参照を書く
+- [X] T125 [P] [US2] `tests/OkidokeiWidget.Core.Tests/Settings/DateSeparatorResolverTests.cs` を書き直す
+      (T123 に依存)
+      - 「/」「-」「.」、空欄、`//`・`🍣` はそのまま返す
+      - `null` は `DefaultSeparator` を返す (`[InlineData(null)]` は Nullable の警告 xUnit1012 が出るので、別の `[Fact]` にする)
+      - 今の「許可されていない値はデフォルトを返す」テストは消す (FR-026 の改訂で成り立たなくなるため)
+- [X] T126 [P] [US2] `tests/OkidokeiWidget.Core.Tests/Settings/DateTextFormatterTests.cs` を追加する (T124 に依存)
+      - 2026-09-28 を「/」で `2026/09/28`、「.」で `2026.09.28`、「-」で `2026-09-28` にする
+      - 月・日が 1 桁の日付 (2026-01-05) を「/」で `2026/01/05` にする
+      - 空欄で `20260928`、`null` で `2026/09/28` にする
+      - `🍣` で `2026🍣09🍣28` にする
+      - 書式の記号になる `d`・`M`・`y`・`'`・`\`・`%`・`:` と、複数文字の `年` や `--` が、そのまま区切りとして出る
+- [X] T127 [P] [US2] `tests/OkidokeiWidget.Core.Tests/Persistence/SettingsRepositoryTests.cs` に、区切り文字の
+      読み書きのテストを追加する (T123 に依存。`/speckit-analyze` の指摘 C1)
+      - `"DateSeparator": null` のファイルを読むと、`FellBackToDefaults` が false で、`DateSeparator` が `null` になる
+      - `DateSeparator` の項目がないファイルを読むと、`DateSeparator` が `"/"` になる
+      - `DateSeparator` が `null`・空欄・`🍣` の設定を `Save` して `Load` し直すと、同じ値になる
+        (`🍣` は `\uXXXX` の形で書き出されてよい。contracts/settings-file.md)
+
+### App: 表示と詳細設定画面
+
+- [X] T128 [US2] `src/OkidokeiWidget.App/ClockWindow.xaml.cs` の `UpdateClockText` で、日付の表示を
+      `DateTextFormatter.Format(now, appearance.DateSeparator)` で作る (T124 に依存)
+      - 今ある `DateSeparatorResolver.Resolve` の呼び出しと、`now.ToString($"yyyy{separator}MM{separator}dd")` による
+        組み立ては消す (`Resolve` は `Format` の中で通すため。`/speckit-analyze` の指摘 U1)
+- [X] T129 [US2] `src/OkidokeiWidget.App/SettingsWindow.xaml.cs` の区切り文字の欄を変える (T123 に依存)
+      - `DateSeparatorOptions` に「.」を足し、「/」「-」「.」の 3 つにする
+      - 初期化時、`DateSeparatorResolver.Resolve(appearance.DateSeparator)` が選択肢にあればそれを、なければ
+        `null` を `DateSeparatorCombo.SelectedItem` に入れる (選択肢にない値をそのまま入れると前の選択が残る。
+        research.md #21 の前提 2)。`null` や項目がない設定は `Resolve` で「/」になるので、「/」を選んだ状態になる
+      - `DateSeparatorCombo_SelectionChanged` は変えない (初期化中は `_isInitializing` で無視し、利用者が
+        選んだときだけ保存する)
+
+### 確認
+
+- [X] T130 [US2] `dotnet build`・`dotnet test` が成功することを確認し、`quickstart.md` の「US2: 見た目の
+      カスタマイズ」の「日付の区切り文字」のシナリオを人間に実施してもらう。結果を本 Phase の末尾に記録する
+      (T123〜T129 に依存)
+
+**Checkpoint**: `dotnet test` が全件成功し、「.」と、設定ファイルに書いた任意の区切り文字で日付が表示される状態。
+詳細設定画面を開いたり、ほかの項目を変えたりしても、設定ファイルに書いた区切り文字が消えないこと
+
+### Phase 25 の確認結果 (2026-09-28)
+
+- `dotnet build` (Debug、警告 0、エラー 0)、`dotnet test` (142 件すべて合格。Phase 25 で 23 件を追加)
+- 確認の前に、開発機の `settings.json` の控えを scratchpad に取った。確認の後、区切り文字は元の「-」に戻した
+- 人間が Debug 版を実機で操作した。quickstart.md の US2「日付の区切り文字」のシナリオはすべて期待どおりだった
+  - 詳細設定画面で「.」を選ぶと、日付が `2026.09.28` の形になった
+  - `DateSeparator` を `"🤣"` に書き換えて起動すると (🍣 の代わりに使った)、日付が `2026🤣09🤣28` と表示された
+    - 起動した時点で、`settings.json` の値は `"\uD83E\uDD23"` の形に書き換わった (contracts/settings-file.md のとおり)
+    - 詳細設定画面の区切り文字の欄は空欄だった。ほかの項目を変えて閉じても、値は `"\uD83E\uDD23"` のままだった
+    - 区切り文字の欄で「/」をマウスで選ぶと、日付が `2026/09/28` になり、`settings.json` も `"/"` になった。
+      research.md #21 の前提 3 のうち未確認だった「マウスで選んだ場合」も、これで確かめられた
+  - `DateSeparator` を `null` にして起動すると、日付は `2026/09/28` で、詳細設定画面の欄は「/」を選んだ状態だった。
+    起動後も、ほかの項目を変えて閉じた後も、`settings.json` は `null` のままだった
+- 最初の確認では、アプリを起動したまま `settings.json` を書き換えていたため、アプリを終了してから起動し直した
+  (設定ファイルはアプリを終了してから書き換える前提。spec.md の Assumptions)
+---
+
+## Phase 26: 見た目・位置ロック・最前面表示をモニタごとに持つ (2026-10-01)
+
+**Purpose**: issue #53 (見た目の設定をモニタごとに持つ) と issue #17 (詳細設定画面を開いたままモニタを
+抜き差ししても一覧が更新されない) を受けた FR-041・FR-042 の新設と、FR-010〜FR-014・FR-038・FR-040 などの
+改訂に対応する。設計は plan.md の「既存実装に対する変更計画 (2026-10-01、issue #53・#17)」と research.md #22〜#24 に従う
+
+- 設定ファイルの形が変わるため、constitution の小さな変更には当たらない。specify・plan・tasks は別々の PR で進めた
+- タスクは主に User Story 4 (マルチモニタ) に属する
+  - US3 のシナリオ 13・14 (タスクトレイのメニュー) と US1 のシナリオ 4 (自動起動) の変更も含む
+  - 位置ロック・最前面表示をモニタごとにすると、今のタスクトレイのメニュー (全体の位置ロックを切り替える) が成り立たなくなる。
+    なので、US4 と切り離して実装できない
+  - implement は、この Phase 全体を 1 ブランチ・1PR で進める (US4 の PR として扱う)
+
+**Independent Test**: 2 台のモニタで、モニタ A のウィジェットの見た目・位置ロック・最前面表示を変えても
+モニタ B が変わらず、再起動後もそれぞれ復元されること。以前のバージョンの `settings.json` のまま起動すると、
+つながっているモニタはアップデート前と同じ見た目・表示で出ること。タスクトレイのメニューが
+「詳細設定...」「自動起動」「終了」だけであること
+
+### Core: 設定の形と引き継ぎ
+
+- [X] T131 [P] [US4] `src/OkidokeiWidget.Core/Settings/AppearanceSettings.cs` と
+      `src/OkidokeiWidget.Core/Settings/WindowBehaviorSettings.cs` に、複製を返す
+      `public AppearanceSettings Clone()`・`public WindowBehaviorSettings Clone()` を足す (research.md #22)
+      - 中身は値型と文字列だけなので、`(AppearanceSettings)MemberwiseClone()` で足りる
+      - XML コメントに、以前のバージョンの設定を各モニタへ引き継ぐときに、モニタごとに別のインスタンスにする
+        ためのもの (SC-009) と書く
+- [X] T132 [P] [US4] `src/OkidokeiWidget.Core/Settings/MonitorPlacement.cs` に、次の 2 つを足す (data-model.md の `MonitorPlacement`)
+      - `public AppearanceSettings Appearance { get; set; } = new();`
+        - data-model.md: 「このモニタの表示設定 (FR-041、2026-10-01 追加)。項目がないときは既定値。明示的な `null` は壊れたファイルとして扱う (issue #51 と同じ)」
+      - `public WindowBehaviorSettings WindowBehavior { get; set; } = new();`
+        - data-model.md: 「このモニタのウィンドウ挙動設定 (FR-041、2026-10-01 追加)。項目がないとき・`null` のときの扱いは `Appearance` と同じ」
+      - `IsVisible` の初期値 (`true`) は変えない。以前のバージョンの設定ファイルで `IsVisible` を書いていないエントリはないが、
+        今の読み込みの挙動を変えないため。新しいモニタを非表示にするのは T135 の `Reconcile` で行う
+- [X] T133 [US4] `src/OkidokeiWidget.Core/Settings/WidgetSettings.cs` の `Appearance`・`WindowBehavior` を、以前のバージョンの
+      設定ファイルを読むためだけのものに変える (research.md #22、data-model.md の `WidgetSettings`)
+      - 型を `AppearanceSettings?`・`WindowBehaviorSettings?` にし、初期値を null にする (`= new()` を外す)
+      - 両方に `[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]` を付ける。JSON の名前は今と同じ (`Appearance`・`WindowBehavior`)
+      - XML コメントに、data-model.md の説明「以前のバージョン (2026-10-01 より前) の設定ファイルにある、アプリ全体で共通の
+        表示設定。読み込んだ後、`Reconcile` で各モニタへ引き継いでから null にする。null のときは書き出さない」を書く
+      - `using System.Text.Json.Serialization;` を足す
+      - この変更の後も、`OkidokeiWidget.App` の `_settings.Appearance`・`_settings.WindowBehavior` を使うところはビルドが通る。
+        null 参照の警告 (CS8602) が出るだけで、エラーにはならない (`TreatWarningsAsErrors` を指定していないため)。
+        直し漏れはビルドでは止まらず実行時に落ちるので、T134・T139〜T141・T143 で直したうえで、T146 で警告 0 を確かめる
+        (`/speckit-analyze` の指摘 H1)
+- [X] T134 [US4] `src/OkidokeiWidget.Core/Persistence/SettingsRepository.cs` の `HasNullSection` を、contracts/settings-file.md の
+      読み込み契約に合わせて変える (T132・T133 に依存)
+      - ルートの `settings.Appearance is null`・`settings.WindowBehavior is null` の判定を外す
+        (ルートの 2 つは、以前のバージョンのファイルでなければ null なのが正しいため)
+      - 各モニタの値について、`placement is null` に加えて `placement.Appearance is null`・`placement.WindowBehavior is null` を壊れたファイルとして扱う
+      - XML コメントの issue #51 の説明に、2026-10-01 の改訂 (ルートの 2 つは null を許す) を足す
+      - `Save` の先頭の `settings.Appearance.BackgroundOpacity` のクランプを、各モニタの `placement.Appearance.BackgroundOpacity`
+        に対して行うように変える。ルートの `settings.Appearance` は、null でないときだけクランプする
+        (今のままだと、ルートが null になった後の起動時の `Save` で落ちる。`/speckit-analyze` の指摘 C1、contracts/settings-file.md の書き込み契約)
+- [X] T135 [US4] `src/OkidokeiWidget.Core/Persistence/MonitorSettingsReconciler.cs` の `Reconcile` を、research.md #22 の手順に
+      変える (T131〜T133 に依存)
+      - 最初に、`settings.Monitors.Count == 0` かどうかを覚えておく (`wasEmpty`)
+      - 1・2: キーの一致と FR-040 の付け替えは今のまま
+      - 引き継ぎ: `settings.Appearance` または `settings.WindowBehavior` が null でなければ (以前のバージョンのファイル)、
+        `settings.Monitors` のすべてのエントリについて次を行う
+        - `settings.Appearance` が null でなければ `placement.Appearance = settings.Appearance.Clone()`。`WindowBehavior` も同じ
+        - キーが接続中のどのモニタの `Identifier` とも一致しないエントリは `placement.IsVisible = false`。一致するエントリは変えない
+        - 終わったら `settings.Appearance = null`・`settings.WindowBehavior = null`
+        - この時点の `Monitors` には、1・2 で今のキーへ移したエントリも入っている。そのため、別の端子につなぎ直したモニタは「つながっている」と扱われる
+      - 3: 割り当てるエントリがなかったモニタには、`IsVisible = false`、位置は今と同じ中央寄せ、見た目・ウィンドウ挙動は既定値 (`new()`) のエントリを足す
+      - `wasEmpty` なら、足したエントリのうち、`ConnectedMonitor.IsPrimary` のモニタのものだけ `IsVisible = true` にする。
+        `IsPrimary` のモニタがなければ、`connectedMonitors` の先頭のモニタのものを `IsVisible = true` にする
+      - クラスと `Reconcile` の XML コメントを、引き継ぎ・新しいモニタを非表示で足すこと・`wasEmpty` の扱い
+        (`Monitors` のエントリは消さないので、空なのは起動時だけ。research.md #22) に合わせて直す
+
+### Core: テスト
+
+- [X] T136 [P] [US4] `tests/OkidokeiWidget.Core.Tests/Settings/SettingsCloneTests.cs` を追加する (T131 に依存)
+      - `AppearanceSettings` のすべての項目を既定値と違う値にしてから `Clone()` し、すべての項目が同じ値で、別のインスタンスであることを確かめる
+      - 複製の `TimeFontSize`・`DateSeparator` などを変えても、元が変わらないことを確かめる
+      - `WindowBehaviorSettings` も同じ (`TopMost`・`PositionLocked`)
+- [X] T137 [US4] `tests/OkidokeiWidget.Core.Tests/Persistence/SettingsRepositoryTests.cs` を、contracts/settings-file.md の
+      読み込み契約・書き込み契約・後方互換性に合わせて変える (T132〜T134 に依存)
+      - 以前のバージョンの形のファイル (ルートに `Appearance`・`WindowBehavior`、各モニタにはない) が、壊れたファイル扱いに
+        ならずに読める。ルートの値が `settings.Appearance`・`settings.WindowBehavior` に入り、各モニタの値は既定値である
+      - 新しい形のファイルを保存して読み直すと、各モニタの `Appearance`・`WindowBehavior` が同じ値になる。
+        保存したファイルの JSON のルートに `Appearance`・`WindowBehavior` のキーがない
+      - 各モニタの `"Appearance": null`・`"WindowBehavior": null` のファイルは、壊れたファイルとして扱い、通知のフラグを立てる
+      - 今の `Load_設定の一部がnullの場合はデフォルト値へフォールバックし通知フラグを立てる` の `{ "Appearance": null }`・
+        `{ "WindowBehavior": null }` のケースは、FR-041 の改訂で成り立たなくなるので外す。代わりに、ルートの 2 つが `null` の
+        ファイルは壊れたファイル扱いにならないテストを足す
+      - 今の `Appearance` を使うテスト (`DateSeparator` の `null` など) は、ルートの `Appearance` を読むテストとして残すか、
+        各モニタの `Appearance` を読むテストに書き換える (どちらでも、`null`・空欄・絵文字を失わないことを確かめる。T127 の意図を保つ)
+      - ルートの `Appearance` の初期値が null になるため、次のテストも壊れる。各モニタの値を見る形に書き換える (`/speckit-analyze` の指摘 H2)
+        - `Load_ファイルが存在しない場合は…`・`Load_不正なJSONの場合は…` の `settings.Appearance.ShowDate`: 既定値ではルートが null なので、
+          `settings.Appearance` が null で `Monitors` が空であることを確かめる形にする
+        - `Save_BackgroundOpacityを0から100の範囲にクランプして書き込む`・`Save_区切り文字は保存して読み戻しても同じ値になる`:
+          `CreateDefault().Appearance` が null。モニタのエントリを 1 つ作り、その `Appearance` に値を入れて保存・読み直す形にする
+          (クランプは、T134 で各モニタに当てるようにしたことを確かめるテストになる)
+        - `Load_設定の一部がnullの場合は…` の残す InlineData の `Assert.NotNull(settings.Appearance)`・`Assert.NotNull(settings.WindowBehavior)`:
+          既定値ではルートが null なので、`Assert.Null` にする
+- [X] T138 [US4] `tests/OkidokeiWidget.Core.Tests/Persistence/MonitorSettingsReconcilerTests.cs` に、research.md #22 の場合分けの
+      テストを足す (T135 に依存)
+      - 以前のバージョンの設定 (ルートに値あり、モニタ A・B のエントリ、A だけ接続) → A・B どちらにもルートの値の複製が入る。
+        A は `IsVisible` がそのまま、B は false になる。ルートの 2 つは null になる
+      - 引き継いだ複製は、エントリごとに別のインスタンスで、ルートの元のインスタンスとも別である
+      - 引き継いだ後にもう一度 `Reconcile` を呼び、B をつないでも、B は false のまま (引き継ぎは 1 回だけ)
+      - 以前のバージョンの設定で、A を別の端子につなぎ直した (FR-040 で付け替わる) → A は接続中として扱われ、`IsVisible` はそのまま
+      - 保存済みの設定があるときに新しいモニタがつながった → `IsVisible = false`、見た目・ウィンドウ挙動は既定値 (`TopMost = true`・`PositionLocked = false`)
+      - `Monitors` が空 (初めて起動した) で、プライマリとそうでないモニタがつながっている → プライマリだけ `IsVisible = true`。
+        プライマリを接続中の一覧の後ろに並べた場合も同じ
+      - `Monitors` が空で、`IsPrimary` のモニタがない → 一覧の先頭のモニタだけ `IsVisible = true`
+      - 以前のバージョンの形で `Monitors` が空 (手で編集したとき) → プライマリだけ表示し、見た目は既定値。ルートの 2 つは null になる
+        (spec.md の Clarifications)
+      - 今の `Reconcile_新規接続モニタにはデフォルト値のエントリを補完する` は、`Monitors` が空でプライマリのモニタなので、新しい規則でも
+        `IsVisible = true` のまま通る。テスト名を「初めて起動したときはプライマリモニタを表示する」の意味に直す
+        (今の前提で `IsVisible` を確かめているのはこのテストだけで、Phase 23 の T118 のテストは `IsVisible` を見ていない。`/speckit-analyze` の指摘 L2)
+      - `Monitors` が空でないときの新しいモニタが非表示になることは、上の「保存済みの設定があるときに新しいモニタがつながった」で確かめる
+
+### App: ウィジェット・タスクトレイ・詳細設定画面
+
+- [X] T139 [US4] `src/OkidokeiWidget.App/ClockWindow.xaml.cs` を、そのモニタの設定を使うように変える (T132・T133 に依存)
+      - `_settings.Appearance` を `_placement.Appearance` に、`_settings.WindowBehavior` を `_placement.WindowBehavior` に置き換える
+        (見た目の反映、`ApplyWindowBehavior`、配置・余白・ドラッグの位置ロックの判定、メニューのチェック)
+      - 本体のメニューの「位置ロック」「最前面表示」は、`_placement.WindowBehavior` を切り替えて、自分の `ApplyWindowBehavior()` を呼び、
+        `SettingsRepository.Save(_settings)` で保存する。全ウィジェットへ反映するコールバック (`onWindowBehaviorChanged`) はなくす (FR-012)
+      - 「詳細設定...」は、コンストラクタで受け取る `Action<string> openSettingsWindow` に、自分のモニタの `_monitor.Identifier` を渡して呼ぶ (FR-042)
+      - `PlacementMenuBuilder.Populate` に渡す位置ロックの値を、`_placement.WindowBehavior.PositionLocked` にする
+        (本体のメニューが使うのは `Populate`。`Build` は T145 で消す。2 回目の指摘 I1)
+- [X] T140 [US4] `src/OkidokeiWidget.App/App.xaml.cs` の、ウィジェットと詳細設定画面のつなぎを変える (T139・T143 に依存)
+      - `OpenSettingsWindow(string? identifier)` にする (research.md #23)
+        - 開いていなければ、`identifier` (null ならプライマリモニタ、それもなければ先頭のモニタの `Identifier`) を最初に選ぶモニタとして `SettingsWindow` を作る
+        - 開いていれば、`identifier` が null でないときだけ `_settingsWindow.SelectMonitor(identifier)` を呼び、`Activate()` する
+      - `CreateClockWindow` で `ClockWindow` に `OpenSettingsWindow` を渡す (ウィジェットからは `Identifier` 付きで呼ばれる)
+      - 見た目が変わったとき (`OnAppearanceChanged(string identifier)`) は、`_clockWindowsByMonitor` にそのモニタのウィジェットがあれば
+        `ApplyAppearance()` を呼び、保存する。ウィジェットがなければ (非表示のモニタ) 保存だけ
+      - `OnWindowBehaviorChanged` (全ウィジェットへの反映) をなくす
+      - `OnDisplaySettingsChanged` で、`SyncClockWindows` の後に、`_settingsWindow?.UpdateConnectedMonitors(_connectedMonitors)` を呼ぶ (issue #17)
+      - `OnMonitorVisibilityChanged` は今のまま (`SyncClockWindows` と保存)
+- [X] T141 [US3] `src/OkidokeiWidget.App/App.xaml.cs` の `BuildTrayContextMenu` を、contracts/context-menus.md の
+      タスクトレイの右クリックメニューに変える (T140 と同じファイルのため、T140 の後に行う)
+      - 「詳細設定...」(`OpenSettingsWindow(null)`)、区切り線、「自動起動」、区切り線、「終了」だけにする
+      - 「自動起動」は `IsCheckable = true`・`IsChecked = _settings.AutoStartEnabled` にする (issue #34 と同じく、Fluent テーマでチェックを描かせるため)
+      - クリックで `_settings.AutoStartEnabled` を反転し、`OnAutoStartChanged()` を呼ぶ。失敗時に値を戻してメッセージを出す処理 (issue #18) はそのまま
+      - ショートカットを書き換えるのは、このクリックのときだけ (issue #20)。起動時の処理 (`OnStartup` のコメントの箇所) は変えない
+      - 位置ロック・最前面表示・配置の項目と、`PlacementMenuBuilder` の呼び出しをなくす
+      - XML コメントと `OnStartup` のタスクトレイのコメント (「右クリックでウィジェット本体と同じ項目のメニューを出す」) を、FR-038 の改訂に合わせて直す
+- [X] T142 [US4] `src/OkidokeiWidget.App/SettingsWindow.xaml` の画面の構成を変える (ui-per-monitor-settings.md の詳細設定画面)
+      - `TabControl` の上に、「編集するモニター」の `TextBlock` と `ComboBox` (`x:Name="MonitorCombo"`、`DisplayMemberPath="Label"`、
+        `SelectionChanged="MonitorCombo_SelectionChanged"`) を置く
+      - 「モニター・起動」タブ (`MonitorsPanel`・`AutoStartCheckBox`) をなくす
+      - 「表示」タブの先頭に、「このモニターに表示する」の `CheckBox` (`x:Name="MonitorVisibleCheckBox"`、`Checked`・`Unchecked` を
+        `MonitorVisibleCheckBox_Changed` に) を置く
+      - 画面の幅 (`Width="560"`)・`SizeToContent="Height"`・タブの見た目のスタイルは変えない
+- [X] T143 [US4] `src/OkidokeiWidget.App/SettingsWindow.xaml.cs` を、選んだモニタの設定を編集するように変える (research.md #23、T142 に依存)
+      - 選択肢のクラス `private sealed class MonitorOption` (`Identifier`・`Label`) を作る。`record` にはしない
+        (値の等しい要素があると `ItemsSource` を替えても選択が残るため。research.md #23 の前提 1)
+      - コンストラクタの引数を `(WidgetSettings settings, IReadOnlyList<ConnectedMonitor> connectedMonitors, string initialIdentifier,
+        Action<string> onAppearanceChanged, Action onMonitorVisibilityChanged)` にする。自動起動の引数と `AutoStartCheckBox_Changed` はなくす
+      - 選択肢を作る処理 `RebuildMonitorOptions(string? preferredIdentifier)`
+        - 接続中のモニタを `DisplayNumber` の順に並べ、ラベルを「モニター N」にする。プライマリなら「 (プライマリ)」、
+          非表示なら「 (非表示)」、両方なら「 (プライマリ、非表示)」を付ける
+        - `_isInitializing` を立ててから `ItemsSource` を替え、`preferredIdentifier` の選択肢があればそれを、なければプライマリ
+          (なければ先頭) を `SelectedItem` に入れる。選んだモニタが前と違えば `LoadSelectedMonitor()` を呼ぶ
+      - 選んだモニタの値を全コントロールに入れ直す処理 `LoadSelectedMonitor()`
+        - 今のコンストラクタの初期化 (フォント・サイズ・透過度・表示の ON/OFF・位置・区切り文字・曜日・色のボタンのラベル) を、
+          選んだモニタの `MonitorPlacement.Appearance` から行うように移す。`MonitorVisibleCheckBox` には `IsVisible` を入れる
+        - 入れ直している間は `_isInitializing` を立てる (research.md #23 の前提 2)
+        - 区切り文字が選択肢にないときに `SelectedItem` へ null を入れる扱い (research.md #21) はそのまま
+        - フォントの `FontFamilyCombo` も、設定のフォント名が選択肢にない (既定値の `""` を含む) ときは `SelectedItem` に null を入れる
+          - 選択肢にない値を入れても前の選択が残るため (research.md #21 の前提 2)
+          - 入れ直すと、前に選んでいたモニタのフォントが見えてしまう。新しいモニタは必ず既定値なので、普段の操作で起きる (`/speckit-analyze` の指摘 H3)
+          - 空欄のまま閉じたり、ほかの項目を変えたりしても、フォント名は書き換えない (区切り文字と同じ)
+      - `MonitorCombo_SelectionChanged`: `_isInitializing` なら何もしない。それ以外は `LoadSelectedMonitor()` を呼ぶ
+      - コードから `SelectedItem` を変えるとき (`RebuildMonitorOptions`・`SelectMonitor`) は、`_isInitializing` を立ててから変え、
+        `LoadSelectedMonitor()` は最後に 1 回だけ呼ぶ (`SelectionChanged` から二重に呼ばれないようにする。`/speckit-analyze` の指摘 L3)
+      - 色の選択画面 (`PickColor`) は、開く前に選んでいるモニタの `MonitorPlacement` を変数に取っておき、閉じた後はそこへ書き込む
+        - 色の選択画面を開いている間も、モニタの抜き差しの通知は届き、選択がプライマリに変わることがあるため (指摘 L3)
+      - 各コントロールの変更イベントは、`_settings.Appearance` ではなく、選んだモニタの `MonitorPlacement.Appearance` に書き込み、
+        `_onAppearanceChanged(選んだモニタの Identifier)` を呼ぶ
+      - `MonitorVisibleCheckBox_Changed`: `_isInitializing` なら何もしない (`LoadSelectedMonitor` が `IsChecked` を入れると
+        `Checked`/`Unchecked` が起き、読み込みの途中で選択肢を作り直してフラグが下りてしまうため。`/speckit-analyze` の 2 回目の指摘 U1)。
+        それ以外は、選んだモニタの `IsVisible` を書き換え、`_onMonitorVisibilityChanged()` を呼び、
+        `RebuildMonitorOptions(選んだモニタの Identifier)` でラベルの「(非表示)」を直す (FR-014)
+      - 外から呼ぶ `public void SelectMonitor(string identifier)`: その選択肢があれば選び、`LoadSelectedMonitor()` を呼ぶ (FR-042)
+      - 外から呼ぶ `public void UpdateConnectedMonitors(IReadOnlyList<ConnectedMonitor> connectedMonitors)`: 一覧を差し替え、
+        `RebuildMonitorOptions(選んでいたモニタの Identifier)` を呼ぶ。選んでいたモニタがなくなっていれば、プライマリの値が入る (issue #17)
+      - `BuildMonitorCheckBoxes`・`MonitorVisibilityCheckBox_Changed` はなくす
+
+### 記録と確認
+
+- [X] T144 [P] [US4] `README.md` の「OkidokeiWidget の概要」の「モニタごとの表示/非表示・表示位置の管理」を、見た目・位置ロック・
+      最前面表示もモニタごとに持てる、という内容に直す
+      - 公開リポジトリ (`probono-a/okidokei-widget`) の README は、反映のときに書き換える運用なので、ここでは直さない (README の「関連リポジトリ」)
+      - 代わりに、反映のときに使う文案を本 Phase の末尾に書いておく
+        - 「できること」: モニタごとに見た目・位置ロック・最前面表示も持てること。タスクトレイの右クリックメニューは
+          「詳細設定」「自動起動」「終了」だけになったこと (「ウィジェット本体と同じ操作ができます」を消す)
+        - 「ビルドと起動」: 自動起動の ON/OFF はタスクトレイの右クリックメニューで切り替えること
+        - 新しくつないだモニタと、アップデートのときにつないでいなかったモニタには時計が表示されないので、
+          詳細設定画面の「編集するモニター」でそのモニタを選び、「このモニターに表示する」をオンにすること (spec.md の Assumptions)
+- [X] T145 [US4] `src/` の中で、見た目・位置ロック・最前面表示を「アプリ全体で共通」「全ウィジェットに反映」と説明している
+      コメントや、タスクトレイのメニューを「本体と同じ項目」と説明しているコメントが残っていないかを `grep` で確かめ、見つかれば直す
+      - `/speckit-analyze` で見つかった次の箇所は、上の言い回しでは拾えないので、必ず直す (指摘 M3)
+        - `src/OkidokeiWidget.App/PlacementMenuBuilder.cs` のクラスの summary の「ウィジェット本体とタスクトレイの両方の右クリックメニューから使い」
+        - `src/OkidokeiWidget.App/ClockWindow.xaml.cs` の `SetAnchorHorizontal` の summary の「本体とタスクトレイのどちらのメニューからも」
+        - `src/OkidokeiWidget.App/App.xaml.cs` の `OnStartup` の「詳細設定での ON/OFF トグル時」(タスクトレイの「自動起動」に直す)
+        - `src/OkidokeiWidget.App/App.xaml.cs` の `OnAutoStartChanged` の「詳細設定のチェックも SettingsWindow 側で設定値に合わせ直す」
+          (タスクトレイのメニューは開くたびに作り直すので、合わせ直す処理は要らない、に直す)
+      - `PlacementMenuBuilder.Build` (トレイのメニューのモニタの項目を作るメソッド) は、T141 で呼ぶ所がなくなるので消す。
+        本体のメニューが使う `Populate` は残す (原則 I。plan.md の変更計画)
+- [X] T146 [US4] `dotnet build` が、App (`src/OkidokeiWidget.App/OkidokeiWidget.App.csproj`) とテスト
+      (`tests/OkidokeiWidget.Core.Tests/OkidokeiWidget.Core.Tests.csproj`) のどちらでも警告 0・エラー 0 で (2 回目の指摘 A1)、`dotnet test` が全件成功することを確認し (警告 0 は、T133 の null 参照の直し漏れを
+      見つけるため。`/speckit-analyze` の指摘 H1)、`quickstart.md` の「モニタごとの設定 (FR-038・FR-041・FR-042、
+      2026-10-01 追加、issue #53・#17)」のシナリオを人間に実施してもらう。結果を本 Phase の末尾に記録する (T131〜T145 に依存)
+      - 始める前に、今の `settings.json` (v1.2.x の形) を別名でコピーしておく。以前のバージョンからの引き継ぎを確かめた後は、
+        ルートの `Appearance` がなくなり、同じ確認をもう一度できないため
+      - 以前のバージョンからの引き継ぎで「つながっていないモニタが非表示になる」ことは、`settings.json` に、つながっていないモニタの
+        エントリがあるときだけ確かめられる。なければ、起動する前に手で 1 つ足しておく (quickstart.md の手順)
+      - US2 の区切り文字の手順は、ルートではなく各モニタの `Appearance.DateSeparator` を書き換える形に直した quickstart.md の手順で行う
+        (ルートに `Appearance` を足すと、以前のバージョンのファイルとして引き継ぎが走るため。2 回目の指摘 C1)
+      - 新しいモニタの確認は、一度もつないだことのないモニタがなければ、`settings.json` からそのモニタのエントリを消してから
+        アプリを起動して確かめる (同じ型番の使われていない設定がないことも確かめる。FR-040 で割り当てられると、新しいモニタにならない)
+
+**Checkpoint**: `dotnet test` が全件成功し、2 台のモニタで見た目・位置ロック・最前面表示を別々に設定・復元できる状態。
+以前のバージョンの `settings.json` のまま起動しても、つながっているモニタの見た目・位置・表示が変わらないこと。
+詳細設定画面を開いたままモニタを抜き差ししても、落ちずに選択肢が追随すること
+
+### Phase 26 の確認結果 (2026-10-02)
+
+- `dotnet build` (App・テストの両方で警告 0、エラー 0)、`dotnet test` (165 件すべて合格。Phase 26 で 23 件を追加)
+- 実機は SONY (モニター 2)・DELL (モニター 1、プライマリ) の 2 台。開発機の `settings.json` (v1.2.x の形) のまま Debug 版を起動した
+  - 引き継ぎ (US4-6・US4-10): ルートの `Appearance`・`WindowBehavior` がなくなり、2 台に複製が入った。2 台とも表示のままで、位置も変わらなかった
+  - 画面の構成 (人間が確認): 「編集するモニター」が開いた場所のモニタ (DELL のウィジェットからは DELL) を選んだ状態で、タブは「表示」「フォント」「レイアウト・背景」の 3 つ。「表示」タブの先頭に「このモニターに表示する」がある (US4-13)
+  - モニタごとの見た目 (人間が確認、US4-8、SC-009): SONY の見た目だけを変えても DELL は変わらなかった
+  - フォントの欄 (analyze の H3): SONY のフォント名を `""` に書き換えて起動すると、SONY を選んだときだけ欄が空欄になり、DELL では `Franklin Gothic Book`、SONY に戻すとまた空欄になった。SONY の文字色だけを変えて閉じても、`settings.json` のフォント名は `""` のままだった
+    - 最初の確認 (SONY でフォントを変えてから DELL に切り替える) は、DELL にもフォントが保存されていたため、空欄にならなかった。確認の手順の間違いで、不具合ではない
+  - 位置ロック・最前面表示 (US4-12・US4-17、SC-009): UI Automation で SONY のウィジェットの右クリックメニューを操作し、SONY だけが切り替わって DELL は変わらないことを、`settings.json` で確かめた
+  - 再起動後の復元 (US4-9・US4-18、SC-005): SONY はロック OFF・最前面 ON、DELL はロック ON・最前面 OFF の状態で「終了」メニューから終了して起動し直すと、それぞれのウィジェットのメニューのチェックが同じ状態で復元された
+  - 開き直したときの切り替え (人間が確認、FR-042): 詳細設定を開いたまま別のモニタのウィジェットから開き直すとそのモニタに切り替わり、タスクトレイから開き直すと選択は変わらなかった。タスクトレイのメニューは「詳細設定...」「自動起動」「終了」だけだった (US3-13・US3-14)
+  - 表示/非表示 (人間が確認、US4-16): 「このモニターに表示する」を OFF にすると、そのウィジェットが消えて選択肢が「(非表示)」の表記になり、詳細設定画面は開いたままだった。ON に戻すと元の位置・見た目で表示された
+  - 新しいモニタ (US4-14): DELL のエントリを消して起動すると、DELL は非表示・見た目は既定値・位置ロック OFF・最前面表示 ON で足され、画面のウィジェットは SONY の 1 つだけだった
+  - 初めての起動 (US4-15): `settings.json` を退避して起動すると、プライマリの DELL だけが表示され、SONY は非表示で足された
+  - アップデートでつながっていないモニタ (US4-6): v1.2.x の形に、つながっていないモニタ (会議室のプロジェクター) のエントリを足して起動すると、そのエントリだけが非表示になり、位置は保存されたままだった。SONY・DELL は表示のままだった
+  - モニタの抜き差し (人間が確認、US4-11・US4-16、issue #17)
+    - SONY のケーブルを抜くと、DELL を選んでいた詳細設定画面の選択は DELL のままで、選択肢から SONY が消えた。落ちなかった
+    - ケーブルを戻すと、選択肢に SONY が戻った。SONY を選んだ状態でもう一度抜くと、プライマリの DELL に切り替わった
+    - 手順の途中で 1 回だけ、「モニター 2 を選んでいたのに、抜いた後も表示が『モニター 2』のままだった」という報告があった。同じ手順を 2 回やり直したが再現せず、原因は特定できなかった (最小の WPF のアプリで `ItemsSource` の差し替えと選択を確かめたが、ドロップダウンを開閉した後でも選択は正しく切り替わった)。設定を失ったり落ちたりする現象ではないので、再現したらあらためて issue にする
+- 自動起動の切り替え (タスクトレイの「自動起動」で、スタートアップフォルダのショートカットが作られる・消えること) は、まだ確かめていない
+  - いまのショートカットは Release 版ではなく Debug 版の exe を指していた (CLAUDE.md には「自動起動は Release ビルドの exe を対象にしている」とある。実物とのずれとして、人間に報告済み)
+  - 切り替えの処理 (`AutoStartManager`) は今回触っていない。呼び出し元だけが詳細設定画面からタスクトレイに変わった
+  - PR のマージ後に Release 版を入れてから、タスクトレイで切り替えて確かめる (人間が決定)
+  - 2026-10-02 追記: PR #73 のマージ後に、Release 版で確かめた (issue #53 のコメント)
+    - Release 版を起動すると、v1.2.x の形の `settings.json` が各モニタへ引き継がれた (2 台ともつながっていて、表示・位置・見た目・位置ロックは元どおり)
+    - タスクトレイの「自動起動」を OFF にすると、ショートカットが消え、`AutoStartEnabled` が `false` になった
+    - 開き直したメニューではチェックが外れていて、ON にすると、ショートカットが Release 版の exe を指して作り直され、`AutoStartEnabled` が `true` に戻った
+    - これで、ショートカットが Debug 版を指していたずれも解消し、CLAUDE.md の記述と一致した
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -944,6 +1490,26 @@ specify から implement までを 1 ブランチ (`feature/margin-in-free-place
   - T102 (`PlacementMenuBuilder`) は T100 と並行して着手できる
   - T103 (`ClockWindow`) は T100・T102 の後、T104 (トレイのメニュー) は T103 の後
   - T105 (確認) は最後
+- **Phase 23 (モニタの見分け方、issue #52)**: Foundational の `MonitorIdentifier`・
+  `MonitorSettingsReconciler` の上に積む。他の Phase の変更とは重ならない。Phase 内の順序は以下のとおり
+  - T114 (型番の取り出し)・T115 (コメント) は並行して着手できる
+  - T116 (付け替え) は T114 の後。T117 (`GetModel` のテスト) は T114 の後、T118 は T116 の後
+  - T119 (記述の確認) はいつでも着手できる。T120 (確認) は最後
+- **Phase 25 (日付の区切り文字、issue #60)**: Phase 9 の `DateSeparatorResolver` (T049)・日付表示 (T051)・区切り文字の
+  選択欄 (T052) の上に積む。他の Phase の変更とは重ならない。Phase 内の順序は以下のとおり
+  - T123 (`Resolve`) → T124 (`DateTextFormatter`)
+  - T125・T127 は T123 の後、T126 は T124 の後。T125〜T127 は並行して着手できる
+  - T128 (`ClockWindow`) は T124 の後、T129 (`SettingsWindow`) は T123 の後
+  - T130 (確認) は最後
+- **Phase 26 (モニタごとの設定、issue #53・#17)**: Phase 23 の `MonitorSettingsReconciler` (T116)、Phase 22 の
+  `HasNullSection` (issue #51)、Phase 25 の詳細設定画面の区切り文字 (T129) の上に積む。Phase 内の順序は以下のとおり
+  - T131 (`Clone`)・T132 (`MonitorPlacement`) は並行して着手できる。T133 (`WidgetSettings`) は T132 の後
+  - T134 (`HasNullSection`) は T132・T133 の後、T135 (`Reconcile`) は T131〜T133 の後
+  - T136 は T131 の後、T137 は T134 の後、T138 は T135 の後
+  - T139 (`ClockWindow`) は T133 の後。T142 (XAML) → T143 (`SettingsWindow`)
+  - T140 (App のつなぎ) は T139・T143 の後、T141 (トレイのメニュー) は T140 の後 (同じファイル)
+  - T133 の後もビルドは通るが、T134・T139〜T141・T143 が終わるまで、起動すると null 参照で落ちる。App の変更はまとめて行う
+  - T144 (README) はいつでも着手できる。T145 (コメントの確認と `Build` の削除) は T141 の後。T146 (確認) は最後
 
 ### User Story Dependencies
 

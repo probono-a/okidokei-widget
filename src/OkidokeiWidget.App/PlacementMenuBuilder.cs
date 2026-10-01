@@ -5,9 +5,9 @@ using OkidokeiWidget.Core.Settings;
 namespace OkidokeiWidget.App;
 
 /// <summary>
-/// 1 モニタ分の「配置」サブメニュー (横位置・縦位置・余白) を作る。ウィジェット本体と
-/// タスクトレイの両方の右クリックメニューから使い、項目や表示が食い違わないようにする
-/// (research.md #17、contracts/context-menus.md)。自由配置中は、余白の項目ごとに選べるかを
+/// 1 モニタ分の「配置」サブメニュー (横位置・縦位置・余白) を作る。ウィジェット本体の右クリックメニューから
+/// 使う (タスクトレイのメニューからは、2026-10-01 に配置をなくした。research.md #17・#24、
+/// contracts/context-menus.md)。自由配置中は、余白の項目ごとに選べるかを
 /// 呼び出し側から受け取ってグレーアウトに反映する (FR-039、research.md #19)。
 /// </summary>
 internal static class PlacementMenuBuilder
@@ -31,20 +31,6 @@ internal static class PlacementMenuBuilder
         (AnchorMargin.Narrow, "狭め"),
         (AnchorMargin.Wide, "広め"),
     ];
-
-    public static MenuItem Build(
-        string header,
-        MonitorPlacement placement,
-        bool isLocked,
-        Action<AnchorHorizontal> onHorizontalSelected,
-        Action<AnchorVertical> onVerticalSelected,
-        Action<AnchorMargin> onMarginSelected,
-        Func<AnchorMargin, bool> canSelectMargin)
-    {
-        var menu = new MenuItem { Header = header };
-        Populate(menu, placement, isLocked, onHorizontalSelected, onVerticalSelected, onMarginSelected, canSelectMargin);
-        return menu;
-    }
 
     /// <summary>
     /// <paramref name="menu"/> の子項目を、現在の配置を反映した内容に作り直す。

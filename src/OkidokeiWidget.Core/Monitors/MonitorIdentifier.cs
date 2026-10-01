@@ -30,8 +30,10 @@ public static class MonitorIdentifier
     private static extern bool EnumDisplayDevices(string? lpDevice, uint iDevNum, ref DISPLAY_DEVICE lpDisplayDevice, uint dwFlags);
 
     /// <summary>
-    /// アダプターのデバイス名 (例: \\.\DISPLAY1) をキーに、EDID 由来の安定したモニタ ID を返す。
-    /// Screen.DeviceName は接続順序によって変わり得るため、永続化キーには使わない (research.md #2)。
+    /// アダプターのデバイス名 (例: \\.\DISPLAY1) をキーに、モニタ ID を返す。ID はデバイスインター
+    /// フェース名 (\\?\DISPLAY#&lt;型番&gt;#&lt;端子ごとの値&gt;#{GUID}) で、型番は EDID 由来だが、
+    /// 端子ごとの値はつないでいる出力先ごとの値なので、別の端子につなぐと ID も変わる
+    /// (research.md #2 の訂正、#20)。Screen.DeviceName は接続順序によって変わり得るため、永続化キーには使わない。
     /// </summary>
     public static IReadOnlyDictionary<string, string> GetStableIdsByAdapterDeviceName()
     {
@@ -57,5 +59,15 @@ public static class MonitorIdentifier
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// モニタ ID から型番 (`#` で区切った 2 つ目の部分。例: SNYAE04) を取り出す。区切った結果が 3 つ未満の
+    /// ID (ID が取れず \\.\DISPLAY1 のままのもの等) と、2 つ目が空の ID には null を返す (research.md #20)。
+    /// </summary>
+    public static string? GetModel(string identifier)
+    {
+        var parts = identifier.Split('#');
+        return parts.Length >= 3 && parts[1].Length > 0 ? parts[1] : null;
     }
 }

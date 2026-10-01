@@ -4,11 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## プロジェクトの現状
 
-`specs/001-clock-widget/` の実装は完了しており (v1.0.0)、`src/OkidokeiWidget.App` /
+`specs/001-clock-widget/` の実装は完了しており (v1.3.0 まで公開済み)、`src/OkidokeiWidget.App` /
 `src/OkidokeiWidget.Core` にソース一式がある。ビルドは
-`dotnet build src/OkidokeiWidget.App/OkidokeiWidget.App.csproj -c Release`。
+`dotnet build src/OkidokeiWidget.App/OkidokeiWidget.App.csproj -c Release`、テストは
+`dotnet test tests/OkidokeiWidget.Core.Tests/OkidokeiWidget.Core.Tests.csproj`。
 このリポジトリは、開発時に使っていた private リポジトリから、ソース・仕様一式のみを
 コピーして公開用に作り直したもの(履歴・development-log 等の開発時ログは含まない)。
+
+## 書いてあることと実物のずれ
+
+- CLAUDE.md・README・constitution などの記述が実物 (コード・ファイル構成・運用) とずれているのに
+  気づいたら、黙って実物に合わせて先に進まず、その場で人間に報告する
+  - 報告は、直すかどうか・どちらを正とするかを人間が決めるため。Claude が勝手に直してもいけない
+- このファイルには、毎回従うルールだけを書く
+  - 「〜の後に更新すること」のような、ある時点で 1 回だけやる指示は書かない
 
 ## Spec-driven development (GitHub Spec Kit)
 
@@ -24,6 +33,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - シンプルさ優先/YAGNI (個人用ツールであり `docs/requirements.md` にない機能を作り込まない)
   - 軽量な常駐動作、設定は JSON (レジストリは使わない)
   - 誤操作による状態変化の防止 (位置ロック等)、マルチモニタ/DPI を前提とした設計
+  - 品質の線引き (普段の操作で落ちない・設定を失わないことは守り、通常の操作ではまず起きない
+    ケースの見た目は気にしない。迷ったら質問する前に Claude がどちらかを判断する)
 - 機能仕様は `specs/<NNN>-<短い名前>/` に置かれる (`.specify/init-options.json` の設定により
   連番)
   - 現時点で唯一の機能は `specs/001-clock-widget/`
