@@ -430,6 +430,6 @@ public partial class SettingsWindow : Window
 
     private static void UpdateColorButtonLabel(Button button, string label, string color)
     {
-        button.Content = $"{label}…({ColorHexResolver.Resolve(color)})";
+        button.Content = $"{label}…({ColorHexResolver.ToRgbHex(color)})";
     }
 }

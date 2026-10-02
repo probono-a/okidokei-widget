@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## プロジェクトの現状
 
-`specs/001-clock-widget/` の実装は完了しており (v1.3.0 まで公開済み)、`src/OkidokeiWidget.App` /
+`specs/001-clock-widget/` の実装は完了しており (v1.3.1 まで公開済み)、`src/OkidokeiWidget.App` /
 `src/OkidokeiWidget.Core` にソース一式がある。ビルドは
 `dotnet build src/OkidokeiWidget.App/OkidokeiWidget.App.csproj -c Release`、テストは
 `dotnet test tests/OkidokeiWidget.Core.Tests/OkidokeiWidget.Core.Tests.csproj`。

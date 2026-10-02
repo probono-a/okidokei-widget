@@ -32,7 +32,7 @@ public partial class ColorPickerWindow : Window
 
         PaletteItemsControl.ItemsSource = Palette;
 
-        HexTextBox.Text = ToRgbHex(ColorHexResolver.Resolve(initialHex));
+        HexTextBox.Text = ColorHexResolver.ToRgbHex(initialHex);
         UpdatePreview();
     }
 
@@ -51,7 +51,7 @@ public partial class ColorPickerWindow : Window
     {
         if (sender is Button { Tag: string hex })
         {
-            HexTextBox.Text = ToRgbHex(hex);
+            HexTextBox.Text = ColorHexResolver.ToRgbHex(hex);
         }
     }
 
@@ -76,8 +76,6 @@ public partial class ColorPickerWindow : Window
     {
         DialogResult = false;
     }
-
-    private static string ToRgbHex(string argbHex) => "#" + argbHex.Substring(3);
 
     private static string FromRgbHexToArgb(string rgbHex) =>
         rgbHex.Length == 7 && rgbHex[0] == '#' ? "#FF" + rgbHex.Substring(1) : rgbHex;

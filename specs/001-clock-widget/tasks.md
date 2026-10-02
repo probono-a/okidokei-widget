@@ -1457,6 +1457,24 @@ specify から implement までを 1 ブランチ (`feature/monitor-identity`)�
 
 ---
 
+## Phase 27: 色の選択ボタンのカラーコードが 8 桁で表示される問題の修正 (2026-10-02)
+
+**Purpose**: issue #76 の修正の記録。FR-025・FR-030 (文字色・背景色) の実装で、詳細設定のボタンに
+保存値の `#AARRGGBB` をそのまま表示しており、色の選択画面の `#RRGGBB` と表記がずれていた。仕様の
+追加・変更は伴わない。修正は `bug` 拡張のフローで行った (経緯・検証結果は
+`.specify/bugs/color-button-hex/` を参照)
+
+- [X] T147 [US2] `src/OkidokeiWidget.Core/Settings/ColorHexResolver.cs` に、`#AARRGGBB` から
+      `#RRGGBB` を返す `ToRgbHex` を追加し、`ColorHexResolverTests.cs` にテストを足す (issue #76)
+- [X] T148 [US2] `src/OkidokeiWidget.App/SettingsWindow.xaml.cs` の文字色・背景色のボタンの表示と、
+      `ColorPickerWindow.xaml.cs` の入力欄の表示で `ToRgbHex` を使う (issue #76、T052・T056 の修正、
+      T147 に依存)
+
+**Checkpoint**: `dotnet build`・`dotnet test` が成功すること。実機で、文字色 (時刻・日付) と背景色の
+ボタンが 6 桁で表示され、色を選び直した後も 6 桁のままであることを確認する
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
